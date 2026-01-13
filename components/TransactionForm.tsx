@@ -49,6 +49,18 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ type, initialItem, it
     return Array.from(new Set([...PROJECT_CATEGORIES, ...existingInItems])).sort();
   }, [items]);
 
+  // Categories that have items (for OUT/WIP selection)
+  const categoriesWithItems = useMemo(() => {
+    const cats = new Set(items.map(i => i.category));
+    return Array.from(cats).sort();
+  }, [items]);
+
+  // Items filtered by selected category
+  const filteredItems = useMemo(() => {
+    if (!selectedCategory) return [];
+    return items.filter(i => i.category === selectedCategory);
+  }, [items, selectedCategory]);
+
   // All available units
   const UNITS = [
     'Pcs', 'Kg', 'M', 'Ft', 'Ltr', 'Bags', 'Box', 'Bundle', 
@@ -196,20 +208,50 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ type, initialItem, it
               </div>
             </div>
           ) : (
-            <div>
-              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Select Item</label>
-              <select 
-                className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-4 focus:border-indigo-500 outline-none appearance-none font-bold text-lg"
-                value={selectedItemId}
-                onChange={(e) => setSelectedItemId(e.target.value)}
-                required
-                disabled={!!initialItem}
-              >
-                <option value="">Select from catalog...</option>
-                {items.map(i => (
-                  <option key={i.id} value={i.id}>{i.name} — {getCurrentStock(i.id)} {i.unit}</option>
-                ))}
-              </select>
+            <div className="space-y-4">
+              {/* Step 1: Select Folder */}
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
+                  <span className="inline-flex items-center justify-center w-5 h-5 bg-slate-200 text-slate-600 rounded-full text-[10px] mr-2">1</span>
+                  Select Folder
+                </label>
+                <select 
+                  className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-4 focus:border-indigo-500 outline-none appearance-none font-bold text-lg"
+                  value={selectedCategory}
+                  onChange={(e) => {
+                    setSelectedCategory(e.target.value);
+                    setSelectedItemId(''); // Reset item when folder changes
+                  }}
+                  required
+                  disabled={!!initialItem}
+                >
+                  <option value="">Choose folder first...</option>
+                  {categoriesWithItems.map(cat => (
+                    <option key={cat} value={cat}>{cat} ({items.filter(i => i.category === cat).length} items)</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Step 2: Select Item (only shown after folder is selected) */}
+              <div className={selectedCategory ? '' : 'opacity-50 pointer-events-none'}>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
+                  <span className="inline-flex items-center justify-center w-5 h-5 bg-slate-200 text-slate-600 rounded-full text-[10px] mr-2">2</span>
+                  Select Item
+                </label>
+                <select 
+                  className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-4 focus:border-indigo-500 outline-none appearance-none font-bold text-lg"
+                  value={selectedItemId}
+                  onChange={(e) => setSelectedItemId(e.target.value)}
+                  required
+                  disabled={!!initialItem || !selectedCategory}
+                >
+                  <option value="">{selectedCategory ? 'Select item...' : 'Select folder first...'}</option>
+                  {filteredItems.map(i => (
+                    <option key={i.id} value={i.id}>{i.name} — {getCurrentStock(i.id)} {i.unit}</option>
+                  ))}
+                </select>
+              </div>
+
               {selectedItemId && type !== 'IN' && (
                 <p className="mt-2 text-sm font-bold text-slate-500">
                   Current Stock: <span className="text-indigo-600">{selectedItemStock}</span> {items.find(i => i.id === selectedItemId)?.unit}

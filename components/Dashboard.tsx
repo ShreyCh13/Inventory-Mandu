@@ -171,91 +171,82 @@ const Dashboard: React.FC<DashboardProps> = ({ items, transactions, onAction, on
         </div>
       )}
 
-      {/* History Modal */}
+      {/* History Full Page */}
       {historyItemId && historyItem && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setHistoryItemId(null)}>
-          <div 
-            className="bg-white rounded-[32px] w-full max-w-2xl max-h-[80vh] overflow-hidden shadow-2xl animate-in zoom-in-95 fade-in duration-200"
-            onClick={e => e.stopPropagation()}
-          >
-            {/* Modal Header */}
-            <div className="p-6 border-b border-slate-100 flex items-center justify-between">
-              <div>
-                <span className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">{historyItem.category}</span>
-                <h3 className="text-2xl font-black text-slate-900">{historyItem.name} History</h3>
-              </div>
-              <button 
-                onClick={() => setHistoryItemId(null)}
-                className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-400 hover:bg-slate-200 hover:text-slate-600 transition-all"
-              >
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
-              </button>
+        <div className="fixed inset-0 bg-slate-50 z-[100] overflow-y-auto">
+          {/* Header */}
+          <div className="sticky top-0 bg-white border-b-2 border-slate-100 px-4 sm:px-8 py-6 flex items-center justify-between shadow-sm">
+            <div>
+              <span className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">{historyItem.category}</span>
+              <h1 className="text-2xl sm:text-3xl font-black text-slate-900">{historyItem.name}</h1>
             </div>
+            <button 
+              onClick={() => setHistoryItemId(null)}
+              className="px-6 py-3 bg-slate-900 text-white rounded-2xl font-black text-sm hover:bg-slate-800 transition-all flex items-center gap-2"
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+              BACK
+            </button>
+          </div>
 
-            {/* Modal Content */}
-            <div className="p-6 overflow-y-auto max-h-[calc(80vh-120px)]">
-              {itemHistory.length > 0 ? (
-                <div className="overflow-x-auto">
+          {/* Content */}
+          <div className="max-w-4xl mx-auto p-4 sm:p-8">
+            {itemHistory.length > 0 ? (
+              <>
+                <div className="bg-white rounded-2xl border-2 border-slate-100 overflow-hidden">
                   <table className="w-full">
                     <thead>
-                      <tr className="border-b-2 border-slate-100">
-                        <th className="text-left py-3 px-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">Type</th>
-                        <th className="text-right py-3 px-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">Qty</th>
-                        <th className="text-left py-3 px-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">User</th>
-                        <th className="text-left py-3 px-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">Reason</th>
-                        <th className="text-right py-3 px-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">Date</th>
+                      <tr className="bg-slate-50 border-b-2 border-slate-200">
+                        <th className="text-left py-4 px-4 text-[11px] font-black text-slate-500 uppercase tracking-widest border-r border-slate-200">Qty</th>
+                        <th className="text-left py-4 px-4 text-[11px] font-black text-slate-500 uppercase tracking-widest border-r border-slate-200">Date & Time</th>
+                        <th className="text-left py-4 px-4 text-[11px] font-black text-slate-500 uppercase tracking-widest border-r border-slate-200">User</th>
+                        <th className="text-left py-4 px-4 text-[11px] font-black text-slate-500 uppercase tracking-widest">Reason</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {itemHistory.map(tx => (
-                        <tr key={tx.id} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
-                          <td className="py-4 px-3">
-                            <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-black uppercase ${
-                              tx.type === 'IN' ? 'bg-indigo-50 text-indigo-600' :
-                              tx.type === 'OUT' ? 'bg-slate-900 text-white' :
-                              'bg-amber-50 text-amber-600'
-                            }`}>
-                              {tx.type === 'IN' && <ArrowDown size={14} />}
-                              {tx.type === 'OUT' && <ArrowUp size={14} />}
-                              {tx.type === 'WIP' && <Timer size={14} />}
-                              {tx.type}
-                            </div>
-                          </td>
-                          <td className={`py-4 px-3 text-right font-black text-lg tabular-nums ${
-                            tx.type === 'IN' ? 'text-indigo-600' : 'text-slate-900'
+                      {itemHistory.map((tx, idx) => (
+                        <tr key={tx.id} className={`border-b border-slate-100 ${idx % 2 === 1 ? 'bg-slate-50/50' : ''}`}>
+                          <td className={`py-4 px-4 font-black text-xl tabular-nums border-r border-slate-100 ${
+                            tx.type === 'IN' ? 'text-emerald-600' : 'text-red-500'
                           }`}>
-                            {tx.type === 'IN' ? '+' : '-'}{tx.quantity}
+                            {tx.type === 'IN' ? '+' : '−'}{tx.quantity}
                           </td>
-                          <td className="py-4 px-3">
-                            <div className="flex items-center gap-2">
-                              <div className="w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center text-[10px] font-black text-slate-500 uppercase">
-                                {tx.user.charAt(0)}
-                              </div>
-                              <span className="text-sm font-bold text-slate-700">{tx.user}</span>
-                            </div>
-                          </td>
-                          <td className="py-4 px-3">
-                            <span className="text-sm text-slate-500 bg-slate-50 px-2 py-1 rounded-lg inline-block max-w-[150px] truncate">
-                              {tx.reason}
+                          <td className="py-4 px-4 border-r border-slate-100">
+                            <span className="text-sm font-bold text-slate-600 tabular-nums">
+                              {formatTime(tx.timestamp)}
                             </span>
                           </td>
-                          <td className="py-4 px-3 text-right text-xs font-bold text-slate-400 tabular-nums whitespace-nowrap">
-                            {formatTime(tx.timestamp)}
+                          <td className="py-4 px-4 border-r border-slate-100">
+                            <span className="text-sm font-black text-slate-700 uppercase">{tx.user}</span>
+                          </td>
+                          <td className="py-4 px-4">
+                            <span className="text-sm text-slate-600">{tx.reason}</span>
                           </td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
-              ) : (
-                <div className="py-16 text-center">
-                  <div className="w-16 h-16 rounded-full bg-slate-100 flex items-center justify-center mx-auto mb-4 text-slate-300">
-                    <History size={32} />
+
+                {/* Total Stock */}
+                <div className="mt-6 bg-slate-900 text-white rounded-2xl p-6 flex items-center justify-between">
+                  <div>
+                    <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Final Stock</p>
+                    <p className="text-sm text-slate-400 mt-1">{historyItem.unit}</p>
                   </div>
-                  <p className="text-slate-400 font-bold">No history for this item yet</p>
+                  <div className="text-5xl font-black tabular-nums">
+                    {inventoryStats.find(i => i.id === historyItemId)?.net || 0}
+                  </div>
                 </div>
-              )}
-            </div>
+              </>
+            ) : (
+              <div className="py-24 text-center bg-white rounded-2xl border-2 border-slate-100">
+                <div className="w-20 h-20 rounded-full bg-slate-100 flex items-center justify-center mx-auto mb-4 text-slate-300">
+                  <History size={40} />
+                </div>
+                <p className="text-slate-400 font-bold text-lg">No history for this item yet</p>
+              </div>
+            )}
           </div>
         </div>
       )}

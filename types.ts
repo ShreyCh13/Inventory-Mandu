@@ -1,6 +1,20 @@
 
 export type TransactionType = 'IN' | 'OUT' | 'WIP';
 
+export interface User {
+  id: string;
+  username: string;
+  password: string;
+  displayName: string;
+  role: 'admin' | 'user';
+  createdAt: number;
+}
+
+export interface AuthSession {
+  user: Omit<User, 'password'>;
+  loginAt: number;
+}
+
 export interface InventoryItem {
   id: string;
   name: string;
