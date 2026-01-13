@@ -20,6 +20,7 @@ const UserManager: React.FC<UserManagerProps> = ({ currentUserId }) => {
   const [displayName, setDisplayName] = useState('');
   const [role, setRole] = useState<'admin' | 'user'>('user');
   const [error, setError] = useState('');
+  const [showFormPassword, setShowFormPassword] = useState(false);
 
   useEffect(() => {
     loadUsers();
@@ -40,6 +41,7 @@ const UserManager: React.FC<UserManagerProps> = ({ currentUserId }) => {
     setError('');
     setShowAddUser(false);
     setEditingUser(null);
+    setShowFormPassword(false);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -208,14 +210,23 @@ const UserManager: React.FC<UserManagerProps> = ({ currentUserId }) => {
                 <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
                   Password {editingUser && <span className="text-slate-300">(leave blank to keep current)</span>}
                 </label>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder={editingUser ? "••••••••" : "Enter password"}
-                  className="w-full bg-slate-50 border-2 border-slate-100 rounded-xl px-4 py-3 focus:border-indigo-500 outline-none font-medium"
-                  required={!editingUser}
-                />
+                <div className="relative">
+                  <input
+                    type={showFormPassword ? "text" : "password"}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder={editingUser ? "••••••••" : "Enter password"}
+                    className="w-full bg-slate-50 border-2 border-slate-100 rounded-xl px-4 py-3 pr-12 focus:border-indigo-500 outline-none font-medium"
+                    required={!editingUser}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowFormPassword(!showFormPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
+                  >
+                    {showFormPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                  </button>
+                </div>
               </div>
               <div>
                 <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
