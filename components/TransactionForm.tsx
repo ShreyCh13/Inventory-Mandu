@@ -8,15 +8,30 @@ interface TransactionFormProps {
   type: TransactionType;
   initialItem?: InventoryItem;
   items: InventoryItem[];
+  transactions: Transaction[];
   onClose: () => void;
   onSubmit: (t: Omit<Transaction, 'id' | 'timestamp'>, newItem?: Omit<InventoryItem, 'id'>) => void;
 }
 
-const TransactionForm: React.FC<TransactionFormProps> = ({ type, initialItem, items, onClose, onSubmit }) => {
+const TransactionForm: React.FC<TransactionFormProps> = ({ type, initialItem, items, transactions, onClose, onSubmit }) => {
   const [isNewItem, setIsNewItem] = useState(false);
   
   // Form State
   const [selectedItemId, setSelectedItemId] = useState(initialItem?.id || '');
+  
+  // Calculate current stock for selected item
+  const getCurrentStock = (itemId: string) => {
+    return transactions
+      .filter(t => t.itemId === itemId)
+      .reduce((sum, t) => {
+        if (t.type === 'IN') return sum + t.quantity;
+        if (t.type === 'OUT' || t.type === 'WIP') return sum - t.quantity;
+        return sum;
+      }, 0);
+  };
+  
+  const selectedItemStock = selectedItemId ? getCurrentStock(selectedItemId) : 0;
+  const wouldGoNegative = type !== 'IN' && !isNewItem && selectedItemId && (selectedItemStock - quantity) < 0;
   const [newItemName, setNewItemName] = useState('');
   const [newItemCategory, setNewItemCategory] = useState('');
   const [newItemUnit, setNewItemUnit] = useState('');
@@ -33,11 +48,18 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ type, initialItem, it
     return Array.from(new Set([...PROJECT_CATEGORIES, ...existingInItems])).sort();
   }, [items]);
 
+  // All available units
+  const UNITS = [
+    'Pcs', 'Kg', 'M', 'Ft', 'Ltr', 'Bags', 'Box', 'Bundle', 
+    'Roll', 'Set', 'Pair', 'Sqft', 'Sqm', 'Cubic M', 'Ton', 'Dozen'
+  ];
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     // Validate: Reason is only required for existing items (OUT/WIP/Restock)
     if (!isSigned || !user || quantity <= 0) return;
     if (!isNewItem && !reason) return;
+    if (wouldGoNegative) return; // Prevent negative stock
 
     if (isNewItem) {
       if (!newItemName || !newItemCategory || !newItemUnit) return;
@@ -159,14 +181,16 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ type, initialItem, it
                   )}
                 </div>
                 <div>
-                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Units (M, Pcs, Kg)</label>
-                  <input 
-                    placeholder="Units..."
-                    className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-4 focus:border-indigo-500 outline-none font-bold text-lg"
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Units</label>
+                  <select 
+                    className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-4 focus:border-indigo-500 outline-none font-bold text-lg appearance-none"
                     value={newItemUnit}
                     onChange={(e) => setNewItemUnit(e.target.value)}
                     required
-                  />
+                  >
+                    <option value="">Select Unit...</option>
+                    {UNITS.map(unit => <option key={unit} value={unit}>{unit}</option>)}
+                  </select>
                 </div>
               </div>
             </div>
@@ -182,9 +206,14 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ type, initialItem, it
               >
                 <option value="">Select from catalog...</option>
                 {items.map(i => (
-                  <option key={i.id} value={i.id}>{i.name} ({i.unit})</option>
+                  <option key={i.id} value={i.id}>{i.name} — {getCurrentStock(i.id)} {i.unit}</option>
                 ))}
               </select>
+              {selectedItemId && type !== 'IN' && (
+                <p className="mt-2 text-sm font-bold text-slate-500">
+                  Current Stock: <span className="text-indigo-600">{selectedItemStock}</span> {items.find(i => i.id === selectedItemId)?.unit}
+                </p>
+              )}
             </div>
           )}
 
@@ -237,11 +266,17 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ type, initialItem, it
              </label>
           </div>
 
+          {wouldGoNegative && (
+            <div className="bg-red-50 border-2 border-red-200 text-red-600 px-5 py-4 rounded-2xl font-bold text-sm">
+              ⚠️ Cannot use {quantity} - only {selectedItemStock} in stock!
+            </div>
+          )}
+
           <button 
             type="submit"
-            disabled={!isSigned || !user || (!isNewItem && !reason)}
+            disabled={!isSigned || !user || (!isNewItem && !reason) || wouldGoNegative}
             className={`w-full py-5 rounded-[24px] font-black text-xl text-white shadow-xl transition-all ${
-              (!isSigned || !user || (!isNewItem && !reason)) ? 'bg-slate-200 cursor-not-allowed' : `${theme.bg} hover:scale-[1.02] active:scale-95`
+              (!isSigned || !user || (!isNewItem && !reason) || wouldGoNegative) ? 'bg-slate-200 cursor-not-allowed' : `${theme.bg} hover:scale-[1.02] active:scale-95`
             }`}
           >
             SUBMIT SIGN-OFF

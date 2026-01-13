@@ -184,6 +184,7 @@ const App: React.FC = () => {
           type={showTransactionModal.type}
           initialItem={showTransactionModal.item}
           items={items}
+          transactions={transactions}
           onClose={() => setShowTransactionModal(null)}
           onSubmit={addTransaction}
         />
