@@ -17,6 +17,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ type, initialItem, it
   const [isNewItem, setIsNewItem] = useState(false);
   
   // Form State
+  const [selectedCategory, setSelectedCategory] = useState(initialItem?.category || '');
   const [selectedItemId, setSelectedItemId] = useState(initialItem?.id || '');
   
   // Calculate current stock for selected item
