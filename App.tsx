@@ -320,7 +320,7 @@ const App: React.FC = () => {
             <User size={28} />
           </button>
           {showUserMenu && (
-            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 md:left-full md:bottom-auto md:top-0 md:ml-2 md:translate-x-0 bg-white rounded-2xl shadow-2xl border border-slate-200 p-4 min-w-[200px] z-[100]">
+            <div className="absolute bottom-full left-0 mb-2 md:left-full md:bottom-0 md:top-auto md:mb-0 md:ml-2 bg-white rounded-2xl shadow-2xl border border-slate-200 p-4 min-w-[200px] z-[100]">
               <div className="pb-3 mb-3 border-b border-slate-100">
                 <p className="font-bold text-slate-900">{session.user.displayName}</p>
                 <p className="text-xs text-slate-500">@{session.user.username}</p>

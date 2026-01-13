@@ -214,21 +214,6 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
           <Shield size={14} />
           <span>{isSupabaseConfigured() ? 'Cloud Database Active' : 'Local Storage Mode'}</span>
         </div>
-
-        {/* Demo Credentials Hint */}
-        <div className="mt-6 p-4 bg-white/5 backdrop-blur-xl rounded-2xl border border-white/10">
-          <p className="text-slate-400 text-xs text-center mb-2 font-medium">Default Credentials</p>
-          <div className="flex flex-wrap justify-center gap-4 text-xs">
-            <div className="flex items-center gap-2">
-              <span className="text-slate-500">Admin:</span>
-              <code className="bg-slate-800 px-2 py-1 rounded text-indigo-300 font-mono">admin / admin123</code>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-slate-500">User:</span>
-              <code className="bg-slate-800 px-2 py-1 rounded text-purple-300 font-mono">mandu / mandu123</code>
-            </div>
-          </div>
-        </div>
       </div>
     </div>
   );
