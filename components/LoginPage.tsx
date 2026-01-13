@@ -1,24 +1,22 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { User, AuthSession } from '../types';
 import { User as UserIcon, Lock, Eye, EyeOff, Shield, Package } from './Icons';
+import * as db from '../lib/db';
+import { isSupabaseConfigured } from '../lib/supabase';
 
-// Default users - in production, these would be stored securely on a server
-const DEFAULT_USERS: User[] = [
+// Default users - will be seeded if database is empty
+const DEFAULT_USERS: Omit<User, 'id' | 'createdAt'>[] = [
   {
-    id: 'admin-001',
     username: 'admin',
     password: 'admin123',
     displayName: 'Administrator',
-    role: 'admin',
-    createdAt: Date.now()
+    role: 'admin'
   },
   {
-    id: 'user-001',
     username: 'mandu',
     password: 'mandu123',
     displayName: 'Mandu User',
-    role: 'user',
-    createdAt: Date.now()
+    role: 'user'
   }
 ];
 
@@ -32,48 +30,66 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isInitializing, setIsInitializing] = useState(true);
 
-  // Get users from localStorage or use defaults
-  const getUsers = (): User[] => {
-    const saved = localStorage.getItem('qs_users');
-    if (saved) {
-      return JSON.parse(saved);
-    }
-    // Initialize with default users
-    localStorage.setItem('qs_users', JSON.stringify(DEFAULT_USERS));
-    return DEFAULT_USERS;
-  };
+  // Initialize default users if none exist
+  useEffect(() => {
+    const initUsers = async () => {
+      const users = await db.getUsers();
+      if (users.length === 0) {
+        // Seed default users
+        for (const user of DEFAULT_USERS) {
+          await db.createUser(user);
+        }
+      }
+      setIsInitializing(false);
+    };
+    initUsers();
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setIsLoading(true);
 
-    // Simulate network delay for better UX
-    await new Promise(resolve => setTimeout(resolve, 800));
+    try {
+      const user = await db.authenticateUser(username, password);
 
-    const users = getUsers();
-    const user = users.find(
-      u => u.username.toLowerCase() === username.toLowerCase() && u.password === password
-    );
-
-    if (user) {
-      const session: AuthSession = {
-        user: {
-          id: user.id,
-          username: user.username,
-          displayName: user.displayName,
-          role: user.role,
-          createdAt: user.createdAt
-        },
-        loginAt: Date.now()
-      };
-      onLogin(session);
-    } else {
-      setError('Invalid username or password');
+      if (user) {
+        const session: AuthSession = {
+          user: {
+            id: user.id,
+            username: user.username,
+            displayName: user.displayName,
+            role: user.role,
+            createdAt: user.createdAt
+          },
+          loginAt: Date.now()
+        };
+        onLogin(session);
+      } else {
+        setError('Invalid username or password');
+      }
+    } catch (err) {
+      setError('Connection error. Please try again.');
+      console.error('Login error:', err);
+    } finally {
       setIsLoading(false);
     }
   };
+
+  if (isInitializing) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-16 h-16 bg-indigo-600 rounded-3xl flex items-center justify-center mx-auto mb-4 animate-pulse">
+            <Package size={32} className="text-white" />
+          </div>
+          <p className="text-slate-400 font-bold">Initializing...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 flex items-center justify-center p-4 relative overflow-hidden">
@@ -104,6 +120,12 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
           <p className="text-slate-400 text-sm font-medium">
             Sign in to manage your inventory
           </p>
+          {isSupabaseConfigured() && (
+            <div className="mt-3 inline-flex items-center gap-2 px-3 py-1 bg-emerald-500/20 rounded-full">
+              <div className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse"></div>
+              <span className="text-emerald-400 text-xs font-bold">Cloud Connected</span>
+            </div>
+          )}
         </div>
 
         {/* Login Form */}
@@ -190,12 +212,12 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
         {/* Security Badge */}
         <div className="mt-6 flex items-center justify-center gap-2 text-slate-500 text-xs">
           <Shield size={14} />
-          <span>Secure Authentication</span>
+          <span>{isSupabaseConfigured() ? 'Cloud Database Active' : 'Local Storage Mode'}</span>
         </div>
 
         {/* Demo Credentials Hint */}
         <div className="mt-6 p-4 bg-white/5 backdrop-blur-xl rounded-2xl border border-white/10">
-          <p className="text-slate-400 text-xs text-center mb-2 font-medium">Demo Credentials</p>
+          <p className="text-slate-400 text-xs text-center mb-2 font-medium">Default Credentials</p>
           <div className="flex flex-wrap justify-center gap-4 text-xs">
             <div className="flex items-center gap-2">
               <span className="text-slate-500">Admin:</span>

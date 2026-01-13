@@ -1,41 +1,23 @@
+// Re-export types from the new database types for backwards compatibility
+export type { 
+  User, 
+  Category,
+  InventoryItem, 
+  Transaction, 
+  AuthSession, 
+  AppSettings 
+} from './lib/database.types';
 
 export type TransactionType = 'IN' | 'OUT' | 'WIP';
 
-export interface User {
-  id: string;
-  username: string;
-  password: string;
-  displayName: string;
-  role: 'admin' | 'user';
-  createdAt: number;
-}
-
-export interface AuthSession {
-  user: Omit<User, 'password'>;
-  loginAt: number;
-}
-
-export interface InventoryItem {
+// Legacy interface for backwards compatibility
+export interface InventoryItemWithOwner {
   id: string;
   name: string;
   category: string;
+  categoryId?: string;
   unit: string;
   minStock: number;
   description?: string;
-}
-
-export interface Transaction {
-  id: string;
-  itemId: string;
-  type: TransactionType;
-  quantity: number;
-  user: string;
-  reason: string;
-  timestamp: number;
-  signature?: string;
-  synced?: boolean; // New sync state
-}
-
-export interface AppSettings {
-  googleSheetUrl: string;
+  createdBy: string;
 }

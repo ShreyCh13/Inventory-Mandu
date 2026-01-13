@@ -1,20 +1,80 @@
-
-import React, { useMemo, useState } from 'react';
-import { InventoryItem, Transaction, TransactionType } from '../types';
+import React, { useMemo, useState, useEffect } from 'react';
+import { InventoryItem, Transaction, TransactionType, AuthSession, User } from '../types';
 import { ArrowDown, ArrowUp, Timer, Package, History } from './Icons';
-import { PROJECT_CATEGORIES } from '../App';
+import * as db from '../lib/db';
 
 interface DashboardProps {
   items: InventoryItem[];
   transactions: Transaction[];
+  session: AuthSession;
+  categories: string[];
   onAction: (type: TransactionType, item: InventoryItem) => void;
   onAddNewItem: () => void;
+  onUpdateTransaction?: (id: string, updates: Partial<Transaction>) => void;
+  onDeleteTransaction?: (id: string) => void;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ items, transactions, onAction, onAddNewItem }) => {
+const Dashboard: React.FC<DashboardProps> = ({ 
+  items, 
+  transactions, 
+  session, 
+  categories, 
+  onAction, 
+  onAddNewItem, 
+  onUpdateTransaction, 
+  onDeleteTransaction 
+}) => {
   const [filter, setFilter] = useState('');
   const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
   const [historyItemId, setHistoryItemId] = useState<string | null>(null);
+  
+  // Edit modal state
+  const [editingTx, setEditingTx] = useState<Transaction | null>(null);
+  const [editLocation, setEditLocation] = useState('');
+  const [editAmount, setEditAmount] = useState('');
+  const [editBillNumber, setEditBillNumber] = useState('');
+
+  // Get users for displaying creator names
+  const [users, setUsers] = useState<User[]>([]);
+  
+  useEffect(() => {
+    const loadUsers = async () => {
+      const loadedUsers = await db.getUsers();
+      setUsers(loadedUsers);
+    };
+    loadUsers();
+  }, []);
+
+  const getUserName = (userId: string) => {
+    const user = users.find(u => u.id === userId);
+    return user?.displayName || 'Unknown User';
+  };
+
+  // Check if current user can edit this transaction
+  const canEdit = (tx: Transaction) => {
+    // Admins can edit everything
+    if (session.user.role === 'admin') return true;
+    // Users can only edit their own transactions
+    return tx.createdBy === session.user.id;
+  };
+
+  const openEditModal = (tx: Transaction) => {
+    setEditingTx(tx);
+    setEditLocation(tx.location || '');
+    setEditAmount(tx.amount?.toString() || '');
+    setEditBillNumber(tx.billNumber || '');
+  };
+
+  const saveEdit = () => {
+    if (editingTx && onUpdateTransaction) {
+      onUpdateTransaction(editingTx.id, {
+        location: editLocation || undefined,
+        amount: editAmount ? parseFloat(editAmount) : undefined,
+        billNumber: editBillNumber || undefined
+      });
+    }
+    setEditingTx(null);
+  };
 
   // Get transactions for the selected item
   const itemHistory = useMemo(() => {
@@ -38,11 +98,7 @@ const Dashboard: React.FC<DashboardProps> = ({ items, transactions, onAction, on
   // Calculated Inventory
   const inventoryStats = useMemo(() => {
     return items.map(item => {
-      const itemTx = transactions.filter(t => t.itemId === item.id);
-      const totalIn = itemTx.filter(t => t.type === 'IN').reduce((acc, t) => acc + t.quantity, 0);
-      const totalOut = itemTx.filter(t => t.type === 'OUT').reduce((acc, t) => acc + t.quantity, 0);
-      const totalWip = itemTx.filter(t => t.type === 'WIP').reduce((acc, t) => acc + t.quantity, 0);
-      const net = totalIn - totalOut - totalWip;
+      const net = db.calculateStock(transactions, item.id);
       return { ...item, net };
     });
   }, [items, transactions]);
@@ -200,7 +256,9 @@ const Dashboard: React.FC<DashboardProps> = ({ items, transactions, onAction, on
                         <th className="text-left py-4 px-4 text-[11px] font-black text-slate-500 uppercase tracking-widest border-r border-slate-200">Qty</th>
                         <th className="text-left py-4 px-4 text-[11px] font-black text-slate-500 uppercase tracking-widest border-r border-slate-200">Date & Time</th>
                         <th className="text-left py-4 px-4 text-[11px] font-black text-slate-500 uppercase tracking-widest border-r border-slate-200">User</th>
-                        <th className="text-left py-4 px-4 text-[11px] font-black text-slate-500 uppercase tracking-widest">Reason</th>
+                        <th className="text-left py-4 px-4 text-[11px] font-black text-slate-500 uppercase tracking-widest border-r border-slate-200">Reason</th>
+                        <th className="text-left py-4 px-4 text-[11px] font-black text-slate-500 uppercase tracking-widest border-r border-slate-200">Details</th>
+                        <th className="text-center py-4 px-4 text-[11px] font-black text-slate-500 uppercase tracking-widest w-16"></th>
                       </tr>
                     </thead>
                     <tbody>
@@ -219,8 +277,65 @@ const Dashboard: React.FC<DashboardProps> = ({ items, transactions, onAction, on
                           <td className="py-4 px-4 border-r border-slate-100">
                             <span className="text-sm font-black text-slate-700 uppercase">{tx.user}</span>
                           </td>
-                          <td className="py-4 px-4">
+                          <td className="py-4 px-4 border-r border-slate-100">
                             <span className="text-sm text-slate-600">{tx.reason}</span>
+                          </td>
+                          <td className="py-4 px-4 border-r border-slate-100">
+                            <div className="flex flex-wrap gap-1">
+                              {tx.location && (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-blue-600 bg-blue-50 px-2 py-1 rounded">
+                                  📍 {tx.location}
+                                </span>
+                              )}
+                              {tx.amount && (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-1 rounded tabular-nums">
+                                  ₹{tx.amount.toLocaleString('en-IN')}
+                                </span>
+                              )}
+                              {tx.billNumber && (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-purple-600 bg-purple-50 px-2 py-1 rounded">
+                                  #{tx.billNumber}
+                                </span>
+                              )}
+                              {!tx.location && !tx.amount && !tx.billNumber && (
+                                <span className="text-[10px] text-slate-300">—</span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="py-4 px-2 text-center">
+                            {canEdit(tx) ? (
+                              <div className="flex items-center justify-center gap-1">
+                                {onUpdateTransaction && (
+                                  <button 
+                                    onClick={() => openEditModal(tx)}
+                                    className="p-2 text-indigo-500 hover:bg-indigo-50 rounded-lg transition-colors"
+                                    title="Edit Details"
+                                  >
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                                      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                                    </svg>
+                                  </button>
+                                )}
+                                {onDeleteTransaction && (
+                                  <button 
+                                    onClick={() => {
+                                      if (confirm('Delete this entry? This will reverse the stock change.')) {
+                                        onDeleteTransaction(tx.id);
+                                      }
+                                    }}
+                                    className="p-2 text-red-400 hover:bg-red-50 rounded-lg transition-colors"
+                                    title="Delete Entry"
+                                  >
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                      <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+                                    </svg>
+                                  </button>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-[9px] text-slate-300">{tx.createdBy ? getUserName(tx.createdBy).split(' ')[0] : '—'}</span>
+                            )}
                           </td>
                         </tr>
                       ))}
@@ -247,6 +362,78 @@ const Dashboard: React.FC<DashboardProps> = ({ items, transactions, onAction, on
                 <p className="text-slate-400 font-bold text-lg">No history for this item yet</p>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Edit Modal */}
+      {editingTx && (
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[200] flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-md rounded-[32px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-gradient-to-r from-indigo-500 to-purple-500 text-white">
+              <div>
+                <h2 className="text-xl font-black">Edit Entry Details</h2>
+                <p className="text-[10px] font-bold text-white/70 uppercase tracking-widest">
+                  {historyItem?.name || 'Item'} • {formatTime(editingTx.timestamp)}
+                </p>
+              </div>
+              <button onClick={() => setEditingTx(null)} className="bg-white/10 p-2 rounded-full hover:bg-white/20 transition-colors">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M18 6 6 18M6 6l12 12"/></svg>
+              </button>
+            </div>
+
+            <div className="p-6 space-y-5">
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
+                  Location <span className="text-slate-300">(Optional)</span>
+                </label>
+                <input 
+                  type="text" placeholder="e.g. Site A, Block 2"
+                  className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-4 focus:border-indigo-500 outline-none font-medium text-base"
+                  value={editLocation}
+                  onChange={(e) => setEditLocation(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
+                  Amount ₹ <span className="text-slate-300">(Optional)</span>
+                </label>
+                <input 
+                  type="number" step="0.01" placeholder="0.00"
+                  className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-4 focus:border-indigo-500 outline-none font-bold text-lg tabular-nums"
+                  value={editAmount}
+                  onChange={(e) => setEditAmount(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
+                  Bill / Invoice No. <span className="text-slate-300">(Optional)</span>
+                </label>
+                <input 
+                  type="text" placeholder="e.g. INV-2024-001"
+                  className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-4 focus:border-indigo-500 outline-none font-medium text-base"
+                  value={editBillNumber}
+                  onChange={(e) => setEditBillNumber(e.target.value)}
+                />
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button 
+                  onClick={() => setEditingTx(null)}
+                  className="flex-1 py-4 rounded-2xl font-black text-slate-500 bg-slate-100 hover:bg-slate-200 transition-all"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={saveEdit}
+                  className="flex-1 py-4 rounded-2xl font-black text-white bg-indigo-600 hover:bg-indigo-700 shadow-xl shadow-indigo-200 transition-all"
+                >
+                  Save Changes
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

@@ -1,19 +1,29 @@
-
 import React, { useState, useMemo } from 'react';
-import { InventoryItem, Transaction, TransactionType } from '../types';
-import { ArrowDown, ArrowUp, Timer, Plus } from './Icons';
-import { PROJECT_CATEGORIES } from '../App';
+import { InventoryItem, Transaction, TransactionType, AuthSession } from '../types';
+import { ArrowDown, ArrowUp, Timer } from './Icons';
+import { calculateStock } from '../lib/db';
 
 interface TransactionFormProps {
   type: TransactionType;
   initialItem?: InventoryItem;
   items: InventoryItem[];
   transactions: Transaction[];
+  categories: string[];
+  session: AuthSession;
   onClose: () => void;
   onSubmit: (t: Omit<Transaction, 'id' | 'timestamp'>, newItem?: Omit<InventoryItem, 'id'>) => void;
 }
 
-const TransactionForm: React.FC<TransactionFormProps> = ({ type, initialItem, items, transactions, onClose, onSubmit }) => {
+const TransactionForm: React.FC<TransactionFormProps> = ({ 
+  type, 
+  initialItem, 
+  items, 
+  transactions, 
+  categories, 
+  session, 
+  onClose, 
+  onSubmit 
+}) => {
   const [isNewItem, setIsNewItem] = useState(false);
   
   // Form State
@@ -21,33 +31,32 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ type, initialItem, it
   const [selectedItemId, setSelectedItemId] = useState(initialItem?.id || '');
   
   // Calculate current stock for selected item
-  const getCurrentStock = (itemId: string) => {
-    return transactions
-      .filter(t => t.itemId === itemId)
-      .reduce((sum, t) => {
-        if (t.type === 'IN') return sum + t.quantity;
-        if (t.type === 'OUT' || t.type === 'WIP') return sum - t.quantity;
-        return sum;
-      }, 0);
-  };
+  const selectedItemStock = selectedItemId ? calculateStock(transactions, selectedItemId) : 0;
   
-  const selectedItemStock = selectedItemId ? getCurrentStock(selectedItemId) : 0;
-  const wouldGoNegative = type !== 'IN' && !isNewItem && selectedItemId && (selectedItemStock - quantity) < 0;
   const [newItemName, setNewItemName] = useState('');
   const [newItemCategory, setNewItemCategory] = useState('');
   const [newItemUnit, setNewItemUnit] = useState('');
   const [isCustomCategory, setIsCustomCategory] = useState(false);
   
   const [quantity, setQuantity] = useState<number>(1);
-  const [user, setUser] = useState('');
+  // Auto-fill user from session
+  const user = session.user.displayName;
   const [reason, setReason] = useState('');
   const [isSigned, setIsSigned] = useState(false);
+  
+  // Optional fields
+  const [location, setLocation] = useState('');
+  const [amount, setAmount] = useState<string>('');
+  const [billNumber, setBillNumber] = useState('');
+  
+  // This must be after quantity is declared
+  const wouldGoNegative = type !== 'IN' && !isNewItem && selectedItemId && (selectedItemStock - quantity) < 0;
 
   // Combine fixed categories with any custom ones already in use
   const allCategories = useMemo(() => {
     const existingInItems = items.map(i => i.category);
-    return Array.from(new Set([...PROJECT_CATEGORIES, ...existingInItems])).sort();
-  }, [items]);
+    return Array.from(new Set([...categories, ...existingInItems])).sort();
+  }, [items, categories]);
 
   // Categories that have items (for OUT/WIP selection)
   const categoriesWithItems = useMemo(() => {
@@ -69,27 +78,32 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ type, initialItem, it
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    // Validate: Reason is only required for existing items (OUT/WIP/Restock)
+    // Validate: Reason is only required for existing items (OUT/WIP), optional for IN
     if (!isSigned || !user || quantity <= 0) return;
-    if (!isNewItem && !reason) return;
+    if (!isNewItem && type !== 'IN' && !reason) return;
     if (wouldGoNegative) return; // Prevent negative stock
 
     if (isNewItem) {
       if (!newItemName || !newItemCategory || !newItemUnit) return;
       
-      const tempId = Math.random().toString(36).substr(2, 9);
       onSubmit({
-        itemId: tempId,
+        itemId: '', // Will be replaced with created item ID
         type,
         quantity,
         user,
         reason: 'Initial Stocking',
-        signature: `Signed by ${user}`
+        signature: `Signed by ${user}`,
+        location: location || undefined,
+        amount: amount ? parseFloat(amount) : undefined,
+        billNumber: billNumber || undefined,
+        createdBy: session.user.id
       }, {
         name: newItemName,
         category: newItemCategory,
+        categoryId: '',
         unit: newItemUnit,
-        minStock: 0
+        minStock: 0,
+        createdBy: session.user.id
       });
     } else {
       if (!selectedItemId) return;
@@ -99,7 +113,11 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ type, initialItem, it
         quantity,
         user,
         reason: reason,
-        signature: `Signed by ${user}`
+        signature: `Signed by ${user}`,
+        location: location || undefined,
+        amount: amount ? parseFloat(amount) : undefined,
+        billNumber: billNumber || undefined,
+        createdBy: session.user.id
       });
     }
   };
@@ -247,7 +265,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ type, initialItem, it
                 >
                   <option value="">{selectedCategory ? 'Select item...' : 'Select folder first...'}</option>
                   {filteredItems.map(i => (
-                    <option key={i.id} value={i.id}>{i.name} — {getCurrentStock(i.id)} {i.unit}</option>
+                    <option key={i.id} value={i.id}>{i.name} — {calculateStock(transactions, i.id)} {i.unit}</option>
                   ))}
                 </select>
               </div>
@@ -267,31 +285,74 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ type, initialItem, it
                 type="number" step="any"
                 className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-4 focus:border-indigo-500 outline-none font-black text-xl tabular-nums"
                 value={quantity}
-                onChange={(e) => setQuantity(parseFloat(e.target.value))}
+                onChange={(e) => setQuantity(parseFloat(e.target.value) || 0)}
                 required
               />
             </div>
             <div>
-              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">User Name</label>
+              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
+                Logged In As
+              </label>
+              <div className="w-full bg-indigo-50 border-2 border-indigo-100 rounded-2xl px-5 py-4 font-bold text-lg text-indigo-700 flex items-center gap-2">
+                <div className="w-8 h-8 bg-indigo-200 rounded-full flex items-center justify-center text-indigo-600 text-sm font-black">
+                  {user.charAt(0).toUpperCase()}
+                </div>
+                {user}
+              </div>
+            </div>
+          </div>
+
+          {/* Optional Fields Section */}
+          <div className="pt-2">
+            <p className="text-[10px] font-bold text-slate-300 uppercase tracking-widest mb-3">Optional Details</p>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
+                  Location <span className="text-slate-300">(Optional)</span>
+                </label>
+                <input 
+                  type="text" placeholder="e.g. Site A, Block 2"
+                  className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-4 focus:border-indigo-500 outline-none font-medium text-base"
+                  value={location}
+                  onChange={(e) => setLocation(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
+                  Amount ₹ <span className="text-slate-300">(Optional)</span>
+                </label>
+                <input 
+                  type="number" step="0.01" placeholder="0.00"
+                  className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-4 focus:border-indigo-500 outline-none font-bold text-lg tabular-nums"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="mt-4">
+              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
+                Bill / Invoice No. <span className="text-slate-300">(Optional)</span>
+              </label>
               <input 
-                type="text" placeholder="Worker name"
-                className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-4 focus:border-indigo-500 outline-none font-bold text-lg"
-                value={user}
-                onChange={(e) => setUser(e.target.value)}
-                required
+                type="text" placeholder="e.g. INV-2024-001"
+                className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-4 focus:border-indigo-500 outline-none font-medium text-base"
+                value={billNumber}
+                onChange={(e) => setBillNumber(e.target.value)}
               />
             </div>
           </div>
 
           {!isNewItem && (
             <div>
-              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Short Reason</label>
+              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
+                Remarks {type === 'IN' && <span className="text-slate-300">(Optional)</span>}
+              </label>
               <textarea 
                 rows={2} placeholder="e.g. Master Bedroom Ceiling"
                 className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-4 focus:border-indigo-500 outline-none font-medium text-lg resize-none"
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
-                required
+                required={type !== 'IN'}
               />
             </div>
           )}
@@ -305,7 +366,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ type, initialItem, it
              />
              <label htmlFor="sign" className="text-sm font-black text-slate-700 leading-tight">
                I CONFIRM THIS ENTRY <br/>
-               <span className="text-slate-400 font-bold text-[10px] uppercase">{user || 'Awaiting Name...'}</span>
+               <span className="text-indigo-600 font-bold text-[10px] uppercase">Signed by {user}</span>
              </label>
           </div>
 
@@ -317,9 +378,9 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ type, initialItem, it
 
           <button 
             type="submit"
-            disabled={!isSigned || !user || (!isNewItem && !reason) || wouldGoNegative}
+            disabled={!isSigned || (!isNewItem && type !== 'IN' && !reason) || !!wouldGoNegative}
             className={`w-full py-5 rounded-[24px] font-black text-xl text-white shadow-xl transition-all ${
-              (!isSigned || !user || (!isNewItem && !reason) || wouldGoNegative) ? 'bg-slate-200 cursor-not-allowed' : `${theme.bg} hover:scale-[1.02] active:scale-95`
+              (!isSigned || (!isNewItem && type !== 'IN' && !reason) || wouldGoNegative) ? 'bg-slate-200 cursor-not-allowed' : `${theme.bg} hover:scale-[1.02] active:scale-95`
             }`}
           >
             SUBMIT SIGN-OFF
