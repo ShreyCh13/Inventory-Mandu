@@ -6,7 +6,7 @@ import TransactionForm from './components/TransactionForm';
 import ItemManager from './components/ItemManager';
 import HistoryLog from './components/HistoryLog';
 import SyncSettings from './components/SyncSettings';
-import { Plus, Package, History, LayoutDashboard, Cloud, Settings } from './components/Icons';
+import { Plus, Minus, Package, History, LayoutDashboard, Cloud, Settings } from './components/Icons';
 
 export const PROJECT_CATEGORIES = [
   "Paint", "Polish", "POP", "Electrical", "Lighting", 
@@ -153,10 +153,16 @@ const App: React.FC = () => {
                </button>
              )}
             {activeTab === 'dashboard' && (
-              <button onClick={() => setShowTransactionModal({ type: 'IN' })} className="flex-1 sm:flex-none flex items-center justify-center gap-3 bg-indigo-600 text-white px-8 py-5 rounded-3xl font-black shadow-xl shadow-indigo-100 hover:bg-indigo-700 active:scale-95 transition-all text-xl">
-                <Plus size={24} />
-                Receive Stock
-              </button>
+              <>
+                <button onClick={() => setShowTransactionModal({ type: 'OUT' })} className="flex-1 sm:flex-none flex items-center justify-center gap-3 bg-red-500 text-white px-8 py-5 rounded-3xl font-black shadow-xl shadow-red-100 hover:bg-red-600 active:scale-95 transition-all text-xl">
+                  <Minus size={24} />
+                  Use Stock
+                </button>
+                <button onClick={() => setShowTransactionModal({ type: 'IN' })} className="flex-1 sm:flex-none flex items-center justify-center gap-3 bg-emerald-500 text-white px-8 py-5 rounded-3xl font-black shadow-xl shadow-emerald-100 hover:bg-emerald-600 active:scale-95 transition-all text-xl">
+                  <Plus size={24} />
+                  Receive Stock
+                </button>
+              </>
             )}
           </div>
         </header>
