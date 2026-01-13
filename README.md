@@ -1,101 +1,114 @@
 # QuickStock Pro
 
-A fast and efficient inventory management application built with React, Vite, and Tailwind CSS.
+A fast inventory management app with **live Google Sheets backup**.
 
-## Features
+## 🚀 Deploy for FREE
 
-- 📦 Track inventory items and stock levels
-- 📁 Organize items into folders
-- 📊 Dashboard overview
-- 📜 Transaction history log
-- 🔄 Google Sheets integration for syncing
+### Option 1: Vercel (Recommended)
 
-## Run Locally
+1. Push code to GitHub
+2. Go to [vercel.com](https://vercel.com) → Import your repo
+3. Click **Deploy** - done!
 
-**Prerequisites:** Node.js 18+
+**Free tier includes:** Unlimited deployments, custom domain, HTTPS
 
-1. Install dependencies:
-   ```bash
-   npm install
+### Option 2: Netlify
+
+1. Push code to GitHub
+2. Go to [netlify.com](https://netlify.com) → Import your repo
+3. Click **Deploy** - done!
+
+**Free tier includes:** 100GB bandwidth/month, custom domain, HTTPS
+
+---
+
+## 📊 Google Sheets Live Backup (FREE)
+
+Your app already has built-in Google Sheets sync! Here's how to set it up:
+
+### Step 1: Create Google Sheet
+
+1. Go to [sheets.google.com](https://sheets.google.com) → Create new spreadsheet
+2. Name it "QuickStock Backup"
+3. Add headers in Row 1:
+   ```
+   Date | Item | Folder | Type | Qty | Unit | User | Reason
    ```
 
-2. (Optional) Set environment variables in `.env.local`:
-   ```
-   GEMINI_API_KEY=your_api_key_here
-   ```
+### Step 2: Add Google Apps Script
 
-3. Run the development server:
-   ```bash
-   npm run dev
-   ```
+1. In your sheet, click **Extensions → Apps Script**
+2. Delete any code and paste this:
 
-4. Open [http://localhost:3000](http://localhost:3000)
+```javascript
+function doPost(e) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheets()[0];
+  var data = JSON.parse(e.postData.contents);
+  sheet.appendRow([
+    data.date, 
+    data.item, 
+    data.folder, 
+    data.type, 
+    data.qty, 
+    data.unit, 
+    data.user, 
+    data.reason
+  ]);
+  return ContentService.createTextOutput("OK");
+}
+```
 
-## Build for Production
+3. Click **Deploy → New Deployment**
+4. Select type: **Web app**
+5. Set "Who has access" to: **Anyone**
+6. Click **Deploy**
+7. **Copy the Web App URL**
+
+### Step 3: Connect Your App
+
+1. In QuickStock Pro, click the ⚙️ **Settings** icon
+2. Paste the Web App URL
+3. Click **Save & Connect**
+
+✅ Now every transaction auto-syncs to your Google Sheet in real-time!
+
+---
+
+## 💾 Data Storage
+
+| Data | Storage | Backup |
+|------|---------|--------|
+| Inventory items | Browser localStorage | Manual export |
+| Transactions | Browser localStorage | Auto-sync to Google Sheets |
+| Settings | Browser localStorage | - |
+
+**Note:** localStorage persists in your browser. For multi-device access, use the Google Sheets backup as your source of truth.
+
+---
+
+## 🛠 Local Development
+
+```bash
+npm install
+npm run dev
+```
+
+Open [http://localhost:3000](http://localhost:3000)
+
+## 📦 Build
 
 ```bash
 npm run build
 ```
 
-The build output will be in the `dist` folder.
+Output in `dist/` folder.
 
-## Deploy
-
-### Vercel (Recommended)
-
-1. Push your code to GitHub
-2. Import your repository on [Vercel](https://vercel.com)
-3. Vercel will auto-detect Vite and deploy
-
-Or deploy with CLI:
-```bash
-npx vercel
-```
-
-### Netlify
-
-1. Push your code to GitHub
-2. Import your repository on [Netlify](https://netlify.com)
-3. Netlify will use the included `netlify.toml` config
-
-Or deploy with CLI:
-```bash
-npx netlify deploy --prod
-```
-
-### Manual / Other Platforms
-
-1. Run `npm run build`
-2. Upload the `dist` folder to your hosting provider
-3. Configure your server to serve `index.html` for all routes (SPA fallback)
+---
 
 ## Tech Stack
 
-- **React 19** - UI framework
-- **Vite** - Build tool
-- **Tailwind CSS** - Styling
-- **TypeScript** - Type safety
-
-## Project Structure
-
-```
-├── App.tsx              # Main app component
-├── index.tsx            # Entry point
-├── index.html           # HTML template
-├── index.css            # Tailwind CSS imports
-├── types.ts             # TypeScript types
-├── components/
-│   ├── Dashboard.tsx    # Dashboard view
-│   ├── HistoryLog.tsx   # Transaction history
-│   ├── ItemManager.tsx  # Item CRUD operations
-│   ├── TransactionForm.tsx
-│   ├── SyncSettings.tsx # Google Sheets setup
-│   └── Icons.tsx        # SVG icons
-├── vercel.json          # Vercel config
-├── netlify.toml         # Netlify config
-└── vite.config.ts       # Vite config
-```
-
-## License
-
-MIT
+- React 19
+- Vite
+- Tailwind CSS (CDN)
+- TypeScript

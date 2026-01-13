@@ -1,7 +1,0 @@
-{
-  "name": "Copy of QuickStock Pro",
-  "description": "A streamlined inventory management system designed for field teams to track IN, OUT, and NET stock with digital sign-offs.",
-  "requestFramePermissions": [
-    "camera"
-  ]
-}
