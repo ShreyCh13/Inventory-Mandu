@@ -10,6 +10,7 @@ interface TransactionFormProps {
   transactions: Transaction[];
   categories: string[];
   session: AuthSession;
+  stockLevels?: Record<string, { stock: number; wip: number }>;
   onClose: () => void;
   onSubmit: (t: Omit<Transaction, 'id' | 'timestamp'>, newItem?: Omit<InventoryItem, 'id'>) => void;
 }
@@ -19,7 +20,8 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
   initialItem, 
   items, 
   transactions, 
-  categories, 
+  categories,
+  stockLevels,
   session, 
   onClose, 
   onSubmit 
@@ -32,6 +34,12 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
   
   // Calculate current stock for selected item
   const selectedItemStock = selectedItemId ? calculateStock(transactions, selectedItemId) : 0;
+  
+  // Get WIP for selected item
+  const selectedItemWIP = selectedItemId && stockLevels ? (stockLevels[selectedItemId]?.wip || 0) : 0;
+  
+  // For OUT transactions, check if we should reduce WIP first
+  const hasWIP = selectedItemWIP > 0 && type === 'OUT';
   
   const [newItemName, setNewItemName] = useState('');
   const [newItemCategory, setNewItemCategory] = useState('');
@@ -271,9 +279,17 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
               </div>
 
               {selectedItemId && type !== 'IN' && (
-                <p className="mt-2 text-sm font-bold text-slate-500">
-                  Current Stock: <span className="text-indigo-600">{selectedItemStock}</span> {items.find(i => i.id === selectedItemId)?.unit}
-                </p>
+                <div className="mt-2 space-y-1">
+                  <p className="text-sm font-bold text-slate-500">
+                    Current Stock: <span className="text-indigo-600">{selectedItemStock}</span> {items.find(i => i.id === selectedItemId)?.unit}
+                  </p>
+                  {hasWIP && (
+                    <p className="text-sm font-bold text-amber-600">
+                      ⏳ Work In Progress: <span className="text-amber-700">{selectedItemWIP}</span> {items.find(i => i.id === selectedItemId)?.unit}
+                      <span className="text-xs text-amber-500 block mt-0.5">WIP will be reduced first when removing items</span>
+                    </p>
+                  )}
+                </div>
               )}
             </div>
           )}

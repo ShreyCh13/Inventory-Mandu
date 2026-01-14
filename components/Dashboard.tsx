@@ -139,17 +139,17 @@ const Dashboard: React.FC<DashboardProps> = ({
             <div key={cat} className={`col-span-1 ${expandedCategory === cat ? 'col-span-2 sm:col-span-3' : ''}`}>
               <button 
                 onClick={() => setExpandedCategory(expandedCategory === cat ? null : cat)}
-                className={`w-full text-left p-5 sm:p-6 rounded-[32px] border-2 transition-all flex flex-col justify-between aspect-square sm:aspect-auto sm:min-h-[140px] ${
+                className={`w-full text-left p-4 sm:p-6 rounded-[28px] sm:rounded-[32px] border-2 transition-all flex flex-col justify-between min-h-[100px] sm:min-h-[140px] ${
                   expandedCategory === cat 
                   ? 'bg-indigo-600 border-indigo-600 text-white shadow-2xl shadow-indigo-200' 
-                  : 'bg-white border-slate-100 text-slate-800 hover:border-indigo-200 shadow-sm'
+                  : 'bg-white border-slate-100 text-slate-800 hover:border-indigo-200 shadow-sm active:scale-[0.98]'
                 }`}
               >
-                <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-2xl flex items-center justify-center mb-4 ${expandedCategory === cat ? 'bg-white/20' : 'bg-indigo-50 text-indigo-600'}`}>
-                  <Package size={24} />
+                <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-2xl flex items-center justify-center mb-3 sm:mb-4 ${expandedCategory === cat ? 'bg-white/20' : 'bg-indigo-50 text-indigo-600'}`}>
+                  <Package size={20} className="sm:w-6 sm:h-6" />
                 </div>
                 <div>
-                  <h3 className="font-black text-sm sm:text-lg leading-tight uppercase tracking-tight break-words">{cat}</h3>
+                  <h3 className="font-black text-base sm:text-lg leading-tight uppercase tracking-tight break-words">{cat}</h3>
                   <p className={`text-[10px] font-bold mt-1 uppercase tracking-widest ${expandedCategory === cat ? 'text-white/60' : 'text-slate-400'}`}>
                     {groupedItems[cat].length} ITEMS
                   </p>
@@ -157,63 +157,63 @@ const Dashboard: React.FC<DashboardProps> = ({
               </button>
 
               {expandedCategory === cat && (
-                <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 animate-in fade-in slide-in-from-top-4 duration-300">
+                <div className="mt-3 sm:mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 animate-in fade-in slide-in-from-top-4 duration-300">
                   {groupedItems[cat].map(item => (
-                    <div key={item.id} className={`p-6 rounded-[32px] border-2 shadow-md ${
+                    <div key={item.id} className={`p-4 sm:p-6 rounded-[28px] sm:rounded-[32px] border-2 shadow-md ${
                       item.wip > 0 
                         ? 'bg-amber-50 border-amber-200' 
                         : 'bg-white border-slate-50'
                     }`}>
-                      <div className="flex justify-between items-start mb-4">
-                        <div className="flex-1 pr-4">
-                          <h4 className="font-black text-xl text-slate-900 leading-none mb-1">{item.name}</h4>
+                      <div className="flex justify-between items-start mb-3 sm:mb-4">
+                        <div className="flex-1 pr-3 sm:pr-4 min-w-0">
+                          <h4 className="font-black text-lg sm:text-xl text-slate-900 leading-none mb-1 truncate">{item.name}</h4>
                           <span className="text-[10px] font-black text-indigo-500 uppercase tracking-widest">{item.unit}</span>
                         </div>
-                        <div className="text-right">
-                          <div className="text-4xl font-black tabular-nums tracking-tighter text-slate-900 leading-none">
+                        <div className="text-right shrink-0">
+                          <div className="text-3xl sm:text-4xl font-black tabular-nums tracking-tighter text-slate-900 leading-none">
                             {item.net}
                           </div>
-                          <div className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">TOTAL STOCK</div>
+                          <div className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">STOCK</div>
                         </div>
                       </div>
                       
                       {/* WIP Indicator - Yellow Badge */}
                       {item.wip > 0 && (
-                        <div className="mb-4 p-3 bg-amber-100 border-2 border-amber-300 rounded-2xl flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <Timer size={18} className="text-amber-600" />
-                            <span className="text-xs font-black text-amber-700 uppercase tracking-wide">Work In Progress</span>
+                        <div className="mb-3 sm:mb-4 p-2.5 sm:p-3 bg-amber-100 border-2 border-amber-300 rounded-xl sm:rounded-2xl flex items-center justify-between">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <Timer size={16} className="text-amber-600 shrink-0" />
+                            <span className="text-[10px] sm:text-xs font-black text-amber-700 uppercase tracking-wide truncate">WIP</span>
                           </div>
-                          <span className="text-2xl font-black text-amber-600 tabular-nums">{item.wip}</span>
+                          <span className="text-xl sm:text-2xl font-black text-amber-600 tabular-nums shrink-0 ml-2">{item.wip}</span>
                         </div>
                       )}
                       
                       <div className="flex gap-2">
                         <button 
                           onClick={() => onAction('OUT', item)}
-                          className="flex-[2] py-4 bg-slate-900 text-white rounded-2xl font-black text-xs active:scale-95 transition-all uppercase tracking-widest"
+                          className="flex-[2] py-3 sm:py-4 bg-slate-900 text-white rounded-xl sm:rounded-2xl font-black text-[10px] sm:text-xs active:scale-95 transition-all uppercase tracking-widest"
                         >
                           TAKE OUT
                         </button>
                         <button 
                           onClick={() => onAction('IN', item)}
-                          className="flex-1 py-4 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center active:scale-95 transition-all"
+                          className="flex-1 py-3 sm:py-4 bg-indigo-50 text-indigo-600 rounded-xl sm:rounded-2xl flex items-center justify-center active:scale-95 transition-all"
                         >
-                          <ArrowDown size={22} />
+                          <ArrowDown size={18} className="sm:w-5 sm:h-5" />
                         </button>
                         <button 
                           onClick={() => onAction('WIP', item)}
-                          className="flex-1 py-4 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center active:scale-95 transition-all border-2 border-amber-200"
+                          className="flex-1 py-3 sm:py-4 bg-amber-50 text-amber-600 rounded-xl sm:rounded-2xl flex items-center justify-center active:scale-95 transition-all border-2 border-amber-200"
                           title="Mark as Work In Progress"
                         >
-                          <Timer size={22} />
+                          <Timer size={18} className="sm:w-5 sm:h-5" />
                         </button>
                         <button 
                           onClick={() => setHistoryItemId(item.id)}
-                          className="flex-1 py-4 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center active:scale-95 transition-all"
+                          className="flex-1 py-3 sm:py-4 bg-emerald-50 text-emerald-600 rounded-xl sm:rounded-2xl flex items-center justify-center active:scale-95 transition-all"
                           title="View History"
                         >
-                          <History size={22} />
+                          <History size={18} className="sm:w-5 sm:h-5" />
                         </button>
                       </div>
                     </div>
@@ -262,7 +262,8 @@ const Dashboard: React.FC<DashboardProps> = ({
             {itemHistory.length > 0 ? (
               <>
                 <div className="bg-white rounded-2xl border-2 border-slate-100 overflow-hidden">
-                  <table className="w-full">
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[600px]">
                     <thead>
                       <tr className="bg-slate-50 border-b-2 border-slate-200">
                         <th className="text-left py-4 px-4 text-[11px] font-black text-slate-500 uppercase tracking-widest border-r border-slate-200">Qty</th>
@@ -356,7 +357,8 @@ const Dashboard: React.FC<DashboardProps> = ({
                         </tr>
                       ))}
                     </tbody>
-                  </table>
+                    </table>
+                  </div>
                 </div>
 
                 {/* Total Stock with WIP breakdown */}

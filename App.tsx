@@ -26,13 +26,20 @@ const App: React.FC = () => {
   const [session, setSession] = useState<AuthSession | null>(() => {
     const saved = localStorage.getItem('qs_session');
     if (saved) {
-      const parsed = JSON.parse(saved);
-      // Check if session is expired (24 hours)
-      if (Date.now() - parsed.loginAt > 24 * 60 * 60 * 1000) {
+      try {
+        const parsed = JSON.parse(saved);
+        // Check if session is expired (30 days for better mobile persistence)
+        const SESSION_DURATION = 30 * 24 * 60 * 60 * 1000; // 30 days
+        if (Date.now() - parsed.loginAt > SESSION_DURATION) {
+          localStorage.removeItem('qs_session');
+          return null;
+        }
+        return parsed;
+      } catch (e) {
+        // Invalid session data, clear it
         localStorage.removeItem('qs_session');
         return null;
       }
-      return parsed;
     }
     return null;
   });
@@ -187,7 +194,52 @@ const App: React.FC = () => {
       }
     }
 
-    // Create transaction
+    // Smart WIP handling: When removing items (OUT), automatically reduce WIP first
+    if (t.type === 'OUT' && finalItemId) {
+      const itemWIP = stockLevels[finalItemId]?.wip || 0;
+      if (itemWIP > 0) {
+        // Calculate how much WIP to reduce (up to the quantity being removed)
+        const wipToReduce = Math.min(itemWIP, t.quantity);
+        
+        // Create a WIP reduction transaction (negative WIP)
+        const wipReductionTx = await db.createTransaction({
+          itemId: finalItemId,
+          type: 'WIP',
+          quantity: -wipToReduce, // Negative quantity reduces WIP
+          user: t.user,
+          reason: `Auto-reduced WIP: ${t.reason}`,
+          signature: t.signature,
+          location: t.location,
+          amount: t.amount ? (t.amount * (wipToReduce / t.quantity)) : undefined, // Proportional amount
+          billNumber: t.billNumber,
+          createdBy: t.createdBy
+        });
+
+        if (wipReductionTx) {
+          setTransactions(prev => [wipReductionTx, ...prev]);
+          
+          // If we reduced all WIP and there's still quantity left, continue with OUT
+          // Otherwise, we're done (all removal came from WIP)
+          if (wipToReduce < t.quantity) {
+            // Still need to remove the remaining quantity as OUT
+            // Create a new transaction object with reduced quantity
+            t = { ...t, quantity: t.quantity - wipToReduce };
+          } else {
+            // All quantity was from WIP, no need for OUT transaction
+            const updatedStockLevels = await db.getStockLevels();
+            setStockLevels(updatedStockLevels);
+            setShowTransactionModal(null);
+            
+            if (settings.googleSheetUrl) {
+              syncToSheets(wipReductionTx);
+            }
+            return;
+          }
+        }
+      }
+    }
+
+    // Create the main transaction
     const newTransaction = await db.createTransaction({
       ...t,
       itemId: finalItemId
@@ -453,6 +505,7 @@ const App: React.FC = () => {
           transactions={transactions}
           categories={categories}
           session={session}
+          stockLevels={stockLevels}
           onClose={() => setShowTransactionModal(null)}
           onSubmit={addTransaction}
         />

@@ -50,12 +50,11 @@ const ItemManager: React.FC<ItemManagerProps> = ({ items, transactions }) => {
     return stock <= item.minStock && stock > 0;
   }).length;
   const outOfStock = items.filter(item => calculateStock(transactions, item.id) <= 0).length;
-  const wipItems = items.filter(item => calculateWIP(transactions, item.id) > 0).length;
 
   return (
     <div className="space-y-6">
       {/* Summary Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <div className="bg-white rounded-2xl p-5 border-2 border-slate-100">
           <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total Items</p>
           <p className="text-3xl font-black text-slate-900 tabular-nums">{totalItems}</p>
@@ -63,13 +62,6 @@ const ItemManager: React.FC<ItemManagerProps> = ({ items, transactions }) => {
         <div className="bg-white rounded-2xl p-5 border-2 border-slate-100">
           <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Categories</p>
           <p className="text-3xl font-black text-indigo-600 tabular-nums">{totalCategories}</p>
-        </div>
-        <div className="bg-amber-50 rounded-2xl p-5 border-2 border-amber-200">
-          <div className="flex items-center gap-1.5 mb-1">
-            <Timer size={14} className="text-amber-500" />
-            <p className="text-[10px] font-black text-amber-600 uppercase tracking-widest">Work In Progress</p>
-          </div>
-          <p className="text-3xl font-black text-amber-600 tabular-nums">{wipItems}</p>
         </div>
         <div className="bg-white rounded-2xl p-5 border-2 border-orange-100">
           <p className="text-[10px] font-black text-orange-500 uppercase tracking-widest">Low Stock</p>

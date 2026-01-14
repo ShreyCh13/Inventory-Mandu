@@ -60,7 +60,10 @@ CREATE TABLE IF NOT EXISTS transactions (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     item_id UUID NOT NULL REFERENCES items(id) ON DELETE CASCADE,
     type VARCHAR(3) NOT NULL CHECK (type IN ('IN', 'OUT', 'WIP')),
-    quantity DECIMAL(12, 3) NOT NULL CHECK (quantity > 0),
+    quantity DECIMAL(12, 3) NOT NULL CHECK (
+        (type IN ('IN', 'OUT') AND quantity > 0) OR 
+        (type = 'WIP' AND quantity != 0)
+    ),
     user_name VARCHAR(100) NOT NULL,
     reason TEXT NOT NULL,
     signature TEXT,
@@ -212,9 +215,18 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- ============================================
+-- MIGRATION NOTE: Allow negative WIP quantities
+-- ============================================
+-- If you already have the transactions table, run this to update the constraint:
+-- ALTER TABLE transactions DROP CONSTRAINT IF EXISTS transactions_quantity_check;
+-- ALTER TABLE transactions ADD CONSTRAINT transactions_quantity_check 
+--   CHECK ((type IN ('IN', 'OUT') AND quantity > 0) OR (type = 'WIP' AND quantity != 0));
+
+-- ============================================
 -- DONE!
 -- ============================================
 -- Your database is ready. Now:
 -- 1. Copy your Supabase URL and anon key
 -- 2. Add them to your .env.local file
 -- 3. Deploy to Vercel
+-- 4. If updating existing database, run the migration SQL above

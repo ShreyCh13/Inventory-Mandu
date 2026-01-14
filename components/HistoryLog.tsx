@@ -528,7 +528,7 @@ const HistoryLog: React.FC<HistoryLogProps> = ({
                   const item = getItem(tx.itemId);
                   const isWIP = tx.type === 'WIP';
                   return (
-                    <div key={tx.id} className={`p-5 sm:p-6 rounded-[24px] sm:rounded-[32px] flex flex-col sm:flex-row gap-4 sm:gap-6 items-start sm:items-center shadow-sm hover:shadow-md transition-shadow ${
+                    <div key={tx.id} className={`p-4 sm:p-6 rounded-[24px] sm:rounded-[32px] flex flex-col sm:flex-row gap-4 sm:gap-6 items-start sm:items-center shadow-sm hover:shadow-md transition-shadow ${
                       isWIP 
                         ? 'bg-amber-50 border-2 border-amber-200' 
                         : 'bg-white border-2 border-slate-50'

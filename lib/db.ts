@@ -578,6 +578,7 @@ export const getStockLevels = async (): Promise<Record<string, { stock: number; 
       } else if (t.type === 'OUT') {
         levels[t.itemId].stock -= t.quantity;
       } else if (t.type === 'WIP') {
+        // Handle both positive (add WIP) and negative (reduce WIP) quantities
         levels[t.itemId].wip += t.quantity;
       }
     });
@@ -608,6 +609,7 @@ export const getStockLevels = async (): Promise<Record<string, { stock: number; 
     } else if (row.type === 'OUT') {
       levels[itemId].stock -= row.quantity;
     } else if (row.type === 'WIP') {
+      // Handle both positive (add WIP) and negative (reduce WIP) quantities
       levels[itemId].wip += row.quantity;
     }
   });
