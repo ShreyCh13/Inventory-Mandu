@@ -37,6 +37,10 @@ const HistoryLog: React.FC<HistoryLogProps> = ({
   // Filter state
   const [filterType, setFilterType] = useState<'ALL' | 'IN' | 'OUT' | 'WIP'>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
+  const [filterUser, setFilterUser] = useState<string>('ALL');
+  const [filterDateFrom, setFilterDateFrom] = useState<string>('');
+  const [filterDateTo, setFilterDateTo] = useState<string>('');
+  const [showFilters, setShowFilters] = useState(false);
   
   // Get users for displaying creator names
   const [users, setUsers] = useState<User[]>([]);
@@ -175,9 +179,30 @@ const HistoryLog: React.FC<HistoryLogProps> = ({
     }).format(new Date(ts));
   };
 
+  // Get unique users from transactions for filter dropdown
+  const uniqueUsers = Array.from(new Set(transactions.map(tx => tx.user))).sort();
+
   // Filter transactions
   const filteredTransactions = transactions.filter(tx => {
+    // Type filter
     if (filterType !== 'ALL' && tx.type !== filterType) return false;
+    
+    // User filter
+    if (filterUser !== 'ALL' && tx.user !== filterUser) return false;
+    
+    // Date range filter
+    if (filterDateFrom) {
+      const fromDate = new Date(filterDateFrom);
+      fromDate.setHours(0, 0, 0, 0);
+      if (tx.timestamp < fromDate.getTime()) return false;
+    }
+    if (filterDateTo) {
+      const toDate = new Date(filterDateTo);
+      toDate.setHours(23, 59, 59, 999);
+      if (tx.timestamp > toDate.getTime()) return false;
+    }
+    
+    // Search query filter
     if (searchQuery) {
       const item = getItem(tx.itemId);
       const query = searchQuery.toLowerCase();
@@ -190,6 +215,18 @@ const HistoryLog: React.FC<HistoryLogProps> = ({
     }
     return true;
   });
+
+  // Check if any filters are active
+  const hasActiveFilters = filterType !== 'ALL' || filterUser !== 'ALL' || filterDateFrom || filterDateTo || searchQuery;
+
+  // Clear all filters
+  const clearFilters = () => {
+    setFilterType('ALL');
+    setFilterUser('ALL');
+    setFilterDateFrom('');
+    setFilterDateTo('');
+    setSearchQuery('');
+  };
 
   // Get displayed transactions with pagination
   const displayedTransactions = filteredTransactions.slice(0, displayCount);
@@ -292,6 +329,24 @@ const HistoryLog: React.FC<HistoryLogProps> = ({
             ))}
           </div>
           
+          {/* More Filters Button */}
+          <button 
+            onClick={() => setShowFilters(!showFilters)}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-sm transition-all ${
+              showFilters || hasActiveFilters
+                ? 'bg-indigo-100 text-indigo-600 border-2 border-indigo-200'
+                : 'bg-white border-2 border-slate-100 text-slate-500 hover:border-indigo-100 hover:text-indigo-600'
+            }`}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
+            </svg>
+            Filters
+            {hasActiveFilters && (
+              <span className="w-2 h-2 bg-indigo-500 rounded-full"></span>
+            )}
+          </button>
+          
           <button 
             onClick={handleExport}
             className="p-2.5 bg-white border-2 border-slate-100 rounded-xl text-slate-400 hover:text-indigo-600 hover:border-indigo-100 transition-all"
@@ -301,6 +356,175 @@ const HistoryLog: React.FC<HistoryLogProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Advanced Filters Panel */}
+      {showFilters && (
+        <div className="bg-white border-2 border-slate-100 rounded-2xl p-5 animate-in slide-in-from-top-2 duration-200">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-black text-slate-700 text-sm uppercase tracking-wider">Advanced Filters</h3>
+            {hasActiveFilters && (
+              <button
+                onClick={clearFilters}
+                className="text-xs font-bold text-red-500 hover:text-red-600 uppercase tracking-wider"
+              >
+                Clear All
+              </button>
+            )}
+          </div>
+          
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {/* User Filter */}
+            <div>
+              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
+                Filter by User
+              </label>
+              <select
+                value={filterUser}
+                onChange={(e) => setFilterUser(e.target.value)}
+                className="w-full bg-slate-50 border-2 border-slate-100 rounded-xl px-4 py-2.5 focus:border-indigo-500 outline-none text-sm font-medium"
+              >
+                <option value="ALL">All Users</option>
+                {uniqueUsers.map(user => (
+                  <option key={user} value={user}>{user}</option>
+                ))}
+              </select>
+            </div>
+            
+            {/* Date From */}
+            <div>
+              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
+                From Date
+              </label>
+              <input
+                type="date"
+                value={filterDateFrom}
+                onChange={(e) => setFilterDateFrom(e.target.value)}
+                className="w-full bg-slate-50 border-2 border-slate-100 rounded-xl px-4 py-2.5 focus:border-indigo-500 outline-none text-sm font-medium"
+              />
+            </div>
+            
+            {/* Date To */}
+            <div>
+              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
+                To Date
+              </label>
+              <input
+                type="date"
+                value={filterDateTo}
+                onChange={(e) => setFilterDateTo(e.target.value)}
+                className="w-full bg-slate-50 border-2 border-slate-100 rounded-xl px-4 py-2.5 focus:border-indigo-500 outline-none text-sm font-medium"
+              />
+            </div>
+          </div>
+          
+          {/* Quick date presets */}
+          <div className="mt-4 pt-4 border-t border-slate-100">
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Quick Filters</p>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => {
+                  const today = new Date();
+                  setFilterDateFrom(today.toISOString().split('T')[0]);
+                  setFilterDateTo(today.toISOString().split('T')[0]);
+                }}
+                className="px-3 py-1.5 bg-slate-100 hover:bg-indigo-100 text-slate-600 hover:text-indigo-600 rounded-lg text-xs font-bold transition-colors"
+              >
+                Today
+              </button>
+              <button
+                onClick={() => {
+                  const today = new Date();
+                  const yesterday = new Date(today);
+                  yesterday.setDate(yesterday.getDate() - 1);
+                  setFilterDateFrom(yesterday.toISOString().split('T')[0]);
+                  setFilterDateTo(yesterday.toISOString().split('T')[0]);
+                }}
+                className="px-3 py-1.5 bg-slate-100 hover:bg-indigo-100 text-slate-600 hover:text-indigo-600 rounded-lg text-xs font-bold transition-colors"
+              >
+                Yesterday
+              </button>
+              <button
+                onClick={() => {
+                  const today = new Date();
+                  const weekAgo = new Date(today);
+                  weekAgo.setDate(weekAgo.getDate() - 7);
+                  setFilterDateFrom(weekAgo.toISOString().split('T')[0]);
+                  setFilterDateTo(today.toISOString().split('T')[0]);
+                }}
+                className="px-3 py-1.5 bg-slate-100 hover:bg-indigo-100 text-slate-600 hover:text-indigo-600 rounded-lg text-xs font-bold transition-colors"
+              >
+                Last 7 Days
+              </button>
+              <button
+                onClick={() => {
+                  const today = new Date();
+                  const monthAgo = new Date(today);
+                  monthAgo.setDate(monthAgo.getDate() - 30);
+                  setFilterDateFrom(monthAgo.toISOString().split('T')[0]);
+                  setFilterDateTo(today.toISOString().split('T')[0]);
+                }}
+                className="px-3 py-1.5 bg-slate-100 hover:bg-indigo-100 text-slate-600 hover:text-indigo-600 rounded-lg text-xs font-bold transition-colors"
+              >
+                Last 30 Days
+              </button>
+              <button
+                onClick={() => {
+                  const today = new Date();
+                  const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+                  setFilterDateFrom(firstDay.toISOString().split('T')[0]);
+                  setFilterDateTo(today.toISOString().split('T')[0]);
+                }}
+                className="px-3 py-1.5 bg-slate-100 hover:bg-indigo-100 text-slate-600 hover:text-indigo-600 rounded-lg text-xs font-bold transition-colors"
+              >
+                This Month
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Active Filters Summary */}
+      {hasActiveFilters && !showFilters && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Active:</span>
+          {filterType !== 'ALL' && (
+            <span className="inline-flex items-center gap-1 px-2 py-1 bg-indigo-100 text-indigo-600 rounded-lg text-xs font-bold">
+              Type: {filterType}
+              <button onClick={() => setFilterType('ALL')} className="hover:text-indigo-800">×</button>
+            </span>
+          )}
+          {filterUser !== 'ALL' && (
+            <span className="inline-flex items-center gap-1 px-2 py-1 bg-indigo-100 text-indigo-600 rounded-lg text-xs font-bold">
+              User: {filterUser}
+              <button onClick={() => setFilterUser('ALL')} className="hover:text-indigo-800">×</button>
+            </span>
+          )}
+          {filterDateFrom && (
+            <span className="inline-flex items-center gap-1 px-2 py-1 bg-indigo-100 text-indigo-600 rounded-lg text-xs font-bold">
+              From: {filterDateFrom}
+              <button onClick={() => setFilterDateFrom('')} className="hover:text-indigo-800">×</button>
+            </span>
+          )}
+          {filterDateTo && (
+            <span className="inline-flex items-center gap-1 px-2 py-1 bg-indigo-100 text-indigo-600 rounded-lg text-xs font-bold">
+              To: {filterDateTo}
+              <button onClick={() => setFilterDateTo('')} className="hover:text-indigo-800">×</button>
+            </span>
+          )}
+          {searchQuery && (
+            <span className="inline-flex items-center gap-1 px-2 py-1 bg-indigo-100 text-indigo-600 rounded-lg text-xs font-bold">
+              Search: "{searchQuery}"
+              <button onClick={() => setSearchQuery('')} className="hover:text-indigo-800">×</button>
+            </span>
+          )}
+          <button
+            onClick={clearFilters}
+            className="text-xs font-bold text-red-500 hover:text-red-600 ml-2"
+          >
+            Clear All
+          </button>
+        </div>
+      )}
 
       {/* Transactions grouped by date */}
       <div className="space-y-6">
