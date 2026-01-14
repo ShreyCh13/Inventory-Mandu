@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { InventoryItem, Transaction } from '../types';
-import { Package } from './Icons';
-import { calculateStock } from '../lib/db';
+import { Package, Timer } from './Icons';
+import { calculateStock, calculateWIP } from '../lib/db';
 
 interface ItemManagerProps {
   items: InventoryItem[];
@@ -50,11 +50,12 @@ const ItemManager: React.FC<ItemManagerProps> = ({ items, transactions }) => {
     return stock <= item.minStock && stock > 0;
   }).length;
   const outOfStock = items.filter(item => calculateStock(transactions, item.id) <= 0).length;
+  const wipItems = items.filter(item => calculateWIP(transactions, item.id) > 0).length;
 
   return (
     <div className="space-y-6">
       {/* Summary Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
         <div className="bg-white rounded-2xl p-5 border-2 border-slate-100">
           <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total Items</p>
           <p className="text-3xl font-black text-slate-900 tabular-nums">{totalItems}</p>
@@ -63,9 +64,16 @@ const ItemManager: React.FC<ItemManagerProps> = ({ items, transactions }) => {
           <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Categories</p>
           <p className="text-3xl font-black text-indigo-600 tabular-nums">{totalCategories}</p>
         </div>
-        <div className="bg-white rounded-2xl p-5 border-2 border-amber-100">
-          <p className="text-[10px] font-black text-amber-500 uppercase tracking-widest">Low Stock</p>
-          <p className="text-3xl font-black text-amber-600 tabular-nums">{lowStockItems}</p>
+        <div className="bg-amber-50 rounded-2xl p-5 border-2 border-amber-200">
+          <div className="flex items-center gap-1.5 mb-1">
+            <Timer size={14} className="text-amber-500" />
+            <p className="text-[10px] font-black text-amber-600 uppercase tracking-widest">Work In Progress</p>
+          </div>
+          <p className="text-3xl font-black text-amber-600 tabular-nums">{wipItems}</p>
+        </div>
+        <div className="bg-white rounded-2xl p-5 border-2 border-orange-100">
+          <p className="text-[10px] font-black text-orange-500 uppercase tracking-widest">Low Stock</p>
+          <p className="text-3xl font-black text-orange-600 tabular-nums">{lowStockItems}</p>
         </div>
         <div className="bg-white rounded-2xl p-5 border-2 border-red-100">
           <p className="text-[10px] font-black text-red-400 uppercase tracking-widest">Out of Stock</p>
@@ -123,16 +131,21 @@ const ItemManager: React.FC<ItemManagerProps> = ({ items, transactions }) => {
                     <thead className="bg-slate-50/80">
                       <tr>
                         <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Item Name</th>
-                        <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Current Qty</th>
+                        <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Stock</th>
+                        <th className="px-6 py-4 text-[10px] font-black text-amber-500 uppercase tracking-widest text-center">WIP</th>
                         <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Last Location</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {groupedItems[category].map(item => {
                         const currentStock = calculateStock(transactions, item.id);
+                        const wipQty = calculateWIP(transactions, item.id);
                         const location = getLastLocation(item.id);
+                        const hasWIP = wipQty > 0;
                         return (
-                          <tr key={item.id} className="group hover:bg-slate-50/50 transition-colors">
+                          <tr key={item.id} className={`group transition-colors ${
+                            hasWIP ? 'bg-amber-50 hover:bg-amber-100/70' : 'hover:bg-slate-50/50'
+                          }`}>
                             <td className="px-6 py-5">
                               <div className="font-bold text-slate-900 text-lg leading-tight">{item.name}</div>
                               <div className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter mt-0.5">
@@ -141,10 +154,20 @@ const ItemManager: React.FC<ItemManagerProps> = ({ items, transactions }) => {
                             </td>
                             <td className="px-6 py-5 text-center">
                               <span className={`inline-block text-2xl font-black tabular-nums ${
-                                currentStock <= 0 ? 'text-red-500' : currentStock <= item.minStock ? 'text-amber-500' : 'text-emerald-600'
+                                currentStock <= 0 ? 'text-red-500' : currentStock <= item.minStock ? 'text-orange-500' : 'text-emerald-600'
                               }`}>
                                 {currentStock}
                               </span>
+                            </td>
+                            <td className="px-6 py-5 text-center">
+                              {hasWIP ? (
+                                <span className="inline-flex items-center gap-1 px-3 py-1.5 bg-amber-200 text-amber-700 rounded-full text-lg font-black tabular-nums">
+                                  <Timer size={14} />
+                                  {wipQty}
+                                </span>
+                              ) : (
+                                <span className="text-slate-300">—</span>
+                              )}
                             </td>
                             <td className="px-6 py-5">
                               <span className="text-sm font-medium text-slate-600">{location}</span>

@@ -568,9 +568,24 @@ export const calculateStock = (transactions: Transaction[], itemId: string): num
     .filter(t => t.itemId === itemId)
     .reduce((sum, t) => {
       if (t.type === 'IN') return sum + t.quantity;
-      if (t.type === 'OUT' || t.type === 'WIP') return sum - t.quantity;
+      if (t.type === 'OUT') return sum - t.quantity;
+      // WIP does NOT subtract from stock - items are still in inventory but marked as "in progress"
       return sum;
     }, 0);
+};
+
+// Calculate Work In Progress quantity for an item
+export const calculateWIP = (transactions: Transaction[], itemId: string): number => {
+  return transactions
+    .filter(t => t.itemId === itemId && t.type === 'WIP')
+    .reduce((sum, t) => sum + t.quantity, 0);
+};
+
+// Get available stock (total stock minus WIP)
+export const calculateAvailableStock = (transactions: Transaction[], itemId: string): number => {
+  const totalStock = calculateStock(transactions, itemId);
+  const wipQuantity = calculateWIP(transactions, itemId);
+  return totalStock - wipQuantity;
 };
 
 // ============ SYNC TO GOOGLE SHEETS ============

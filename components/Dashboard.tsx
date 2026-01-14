@@ -99,7 +99,9 @@ const Dashboard: React.FC<DashboardProps> = ({
   const inventoryStats = useMemo(() => {
     return items.map(item => {
       const net = db.calculateStock(transactions, item.id);
-      return { ...item, net };
+      const wip = db.calculateWIP(transactions, item.id);
+      const available = net - wip; // Available = Total - WIP
+      return { ...item, net, wip, available };
     });
   }, [items, transactions]);
 
@@ -164,8 +166,12 @@ const Dashboard: React.FC<DashboardProps> = ({
               {expandedCategory === cat && (
                 <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 animate-in fade-in slide-in-from-top-4 duration-300">
                   {groupedItems[cat].map(item => (
-                    <div key={item.id} className="bg-white p-6 rounded-[32px] border-2 border-slate-50 shadow-md">
-                      <div className="flex justify-between items-start mb-6">
+                    <div key={item.id} className={`p-6 rounded-[32px] border-2 shadow-md ${
+                      item.wip > 0 
+                        ? 'bg-amber-50 border-amber-200' 
+                        : 'bg-white border-slate-50'
+                    }`}>
+                      <div className="flex justify-between items-start mb-4">
                         <div className="flex-1 pr-4">
                           <h4 className="font-black text-xl text-slate-900 leading-none mb-1">{item.name}</h4>
                           <span className="text-[10px] font-black text-indigo-500 uppercase tracking-widest">{item.unit}</span>
@@ -174,9 +180,21 @@ const Dashboard: React.FC<DashboardProps> = ({
                           <div className="text-4xl font-black tabular-nums tracking-tighter text-slate-900 leading-none">
                             {item.net}
                           </div>
-                          <div className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">NET STOCK</div>
+                          <div className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">TOTAL STOCK</div>
                         </div>
                       </div>
+                      
+                      {/* WIP Indicator - Yellow Badge */}
+                      {item.wip > 0 && (
+                        <div className="mb-4 p-3 bg-amber-100 border-2 border-amber-300 rounded-2xl flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <Timer size={18} className="text-amber-600" />
+                            <span className="text-xs font-black text-amber-700 uppercase tracking-wide">Work In Progress</span>
+                          </div>
+                          <span className="text-2xl font-black text-amber-600 tabular-nums">{item.wip}</span>
+                        </div>
+                      )}
+                      
                       <div className="flex gap-2">
                         <button 
                           onClick={() => onAction('OUT', item)}
@@ -192,7 +210,8 @@ const Dashboard: React.FC<DashboardProps> = ({
                         </button>
                         <button 
                           onClick={() => onAction('WIP', item)}
-                          className="flex-1 py-4 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center active:scale-95 transition-all"
+                          className="flex-1 py-4 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center active:scale-95 transition-all border-2 border-amber-200"
+                          title="Mark as Work In Progress"
                         >
                           <Timer size={22} />
                         </button>
@@ -263,11 +282,15 @@ const Dashboard: React.FC<DashboardProps> = ({
                     </thead>
                     <tbody>
                       {itemHistory.map((tx, idx) => (
-                        <tr key={tx.id} className={`border-b border-slate-100 ${idx % 2 === 1 ? 'bg-slate-50/50' : ''}`}>
+                        <tr key={tx.id} className={`border-b border-slate-100 ${
+                          tx.type === 'WIP' 
+                            ? 'bg-amber-50' 
+                            : idx % 2 === 1 ? 'bg-slate-50/50' : ''
+                        }`}>
                           <td className={`py-4 px-4 font-black text-xl tabular-nums border-r border-slate-100 ${
-                            tx.type === 'IN' ? 'text-emerald-600' : 'text-red-500'
+                            tx.type === 'IN' ? 'text-emerald-600' : tx.type === 'WIP' ? 'text-amber-600' : 'text-red-500'
                           }`}>
-                            {tx.type === 'IN' ? '+' : '−'}{tx.quantity}
+                            {tx.type === 'IN' ? '+' : tx.type === 'WIP' ? '⏳' : '−'}{tx.quantity}
                           </td>
                           <td className="py-4 px-4 border-r border-slate-100">
                             <span className="text-sm font-bold text-slate-600 tabular-nums">
@@ -343,16 +366,37 @@ const Dashboard: React.FC<DashboardProps> = ({
                   </table>
                 </div>
 
-                {/* Total Stock */}
-                <div className="mt-6 bg-slate-900 text-white rounded-2xl p-6 flex items-center justify-between">
-                  <div>
-                    <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Final Stock</p>
-                    <p className="text-sm text-slate-400 mt-1">{historyItem.unit}</p>
-                  </div>
-                  <div className="text-5xl font-black tabular-nums">
-                    {inventoryStats.find(i => i.id === historyItemId)?.net || 0}
-                  </div>
-                </div>
+                {/* Total Stock with WIP breakdown */}
+                {(() => {
+                  const stats = inventoryStats.find(i => i.id === historyItemId);
+                  return (
+                    <div className="mt-6 space-y-3">
+                      {stats?.wip && stats.wip > 0 && (
+                        <div className="bg-amber-100 border-2 border-amber-300 text-amber-800 rounded-2xl p-6 flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <Timer size={24} className="text-amber-600" />
+                            <div>
+                              <p className="text-[11px] font-black text-amber-600 uppercase tracking-widest">Work In Progress</p>
+                              <p className="text-sm text-amber-600/70 mt-0.5">Items being used but still in inventory</p>
+                            </div>
+                          </div>
+                          <div className="text-4xl font-black tabular-nums text-amber-600">
+                            {stats.wip}
+                          </div>
+                        </div>
+                      )}
+                      <div className="bg-slate-900 text-white rounded-2xl p-6 flex items-center justify-between">
+                        <div>
+                          <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Total Stock</p>
+                          <p className="text-sm text-slate-400 mt-1">{historyItem.unit}</p>
+                        </div>
+                        <div className="text-5xl font-black tabular-nums">
+                          {stats?.net || 0}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
               </>
             ) : (
               <div className="py-24 text-center bg-white rounded-2xl border-2 border-slate-100">

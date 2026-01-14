@@ -1,13 +1,15 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Transaction, InventoryItem, AuthSession, User } from '../types';
-import { ArrowDown, ArrowUp, Timer, Download } from './Icons';
+import { Transaction, InventoryItem, AuthSession, User, TransactionType } from '../types';
+import { ArrowDown, ArrowUp, Timer, Download, Plus } from './Icons';
 import * as db from '../lib/db';
 
 interface HistoryLogProps {
   transactions: Transaction[];
   items: InventoryItem[];
   session: AuthSession;
+  categories: string[];
   onExport: () => void;
+  onAddTransaction?: (tx: Transaction) => void;
   onUpdateTransaction?: (id: string, updates: Partial<Transaction>) => void;
   onDeleteTransaction?: (id: string) => void;
 }
@@ -18,11 +20,14 @@ const HistoryLog: React.FC<HistoryLogProps> = ({
   transactions, 
   items, 
   session, 
+  categories,
   onExport, 
+  onAddTransaction,
   onUpdateTransaction, 
   onDeleteTransaction 
 }) => {
   const getItem = (id: string) => items.find(i => i.id === id);
+  const isAdmin = session.user.role === 'admin';
   
   // Pagination state
   const [displayCount, setDisplayCount] = useState(ITEMS_PER_PAGE);
@@ -65,12 +70,33 @@ const HistoryLog: React.FC<HistoryLogProps> = ({
   
   // Edit modal state
   const [editingTx, setEditingTx] = useState<Transaction | null>(null);
+  const [editItemId, setEditItemId] = useState('');
+  const [editType, setEditType] = useState<TransactionType>('IN');
+  const [editQuantity, setEditQuantity] = useState('');
+  const [editUser, setEditUser] = useState('');
+  const [editReason, setEditReason] = useState('');
   const [editLocation, setEditLocation] = useState('');
   const [editAmount, setEditAmount] = useState('');
   const [editBillNumber, setEditBillNumber] = useState('');
+  
+  // Add transaction modal state (admin only)
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [newItemId, setNewItemId] = useState('');
+  const [newType, setNewType] = useState<TransactionType>('IN');
+  const [newQuantity, setNewQuantity] = useState('');
+  const [newUser, setNewUser] = useState('');
+  const [newReason, setNewReason] = useState('');
+  const [newLocation, setNewLocation] = useState('');
+  const [newAmount, setNewAmount] = useState('');
+  const [newBillNumber, setNewBillNumber] = useState('');
 
   const openEditModal = (tx: Transaction) => {
     setEditingTx(tx);
+    setEditItemId(tx.itemId);
+    setEditType(tx.type);
+    setEditQuantity(tx.quantity.toString());
+    setEditUser(tx.user);
+    setEditReason(tx.reason);
     setEditLocation(tx.location || '');
     setEditAmount(tx.amount?.toString() || '');
     setEditBillNumber(tx.billNumber || '');
@@ -78,13 +104,57 @@ const HistoryLog: React.FC<HistoryLogProps> = ({
 
   const saveEdit = () => {
     if (editingTx && onUpdateTransaction) {
-      onUpdateTransaction(editingTx.id, {
+      const updates: Partial<Transaction> = {
         location: editLocation || undefined,
         amount: editAmount ? parseFloat(editAmount) : undefined,
         billNumber: editBillNumber || undefined
-      });
+      };
+      
+      // Admin can edit all fields
+      if (isAdmin) {
+        updates.itemId = editItemId;
+        updates.type = editType;
+        updates.quantity = parseInt(editQuantity) || 1;
+        updates.user = editUser;
+        updates.reason = editReason;
+      }
+      
+      onUpdateTransaction(editingTx.id, updates);
     }
     setEditingTx(null);
+  };
+
+  const openAddModal = () => {
+    setNewItemId(items[0]?.id || '');
+    setNewType('IN');
+    setNewQuantity('1');
+    setNewUser(session.user.displayName);
+    setNewReason('');
+    setNewLocation('');
+    setNewAmount('');
+    setNewBillNumber('');
+    setShowAddModal(true);
+  };
+
+  const saveNewTransaction = () => {
+    if (!onAddTransaction || !newItemId || !newReason || !newQuantity) return;
+    
+    const newTx: Transaction = {
+      id: crypto.randomUUID(),
+      itemId: newItemId,
+      type: newType,
+      quantity: parseInt(newQuantity) || 1,
+      user: newUser || session.user.displayName,
+      reason: newReason,
+      timestamp: Date.now(),
+      location: newLocation || undefined,
+      amount: newAmount ? parseFloat(newAmount) : undefined,
+      billNumber: newBillNumber || undefined,
+      createdBy: session.user.id
+    };
+    
+    onAddTransaction(newTx);
+    setShowAddModal(false);
   };
 
   const formatTime = (ts: number) => {
@@ -178,9 +248,21 @@ const HistoryLog: React.FC<HistoryLogProps> = ({
           <h2 className="text-xl font-black text-slate-800">Recent Activity</h2>
           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
             {filteredTransactions.length} of {totalCount || transactions.length} entries
+            {isAdmin && <span className="text-indigo-500 ml-2">• ADMIN MODE</span>}
           </p>
         </div>
-        <div className="flex items-center gap-3 w-full sm:w-auto">
+        <div className="flex items-center gap-3 w-full sm:w-auto flex-wrap">
+          {/* Admin: Add Transaction Button */}
+          {isAdmin && onAddTransaction && (
+            <button
+              onClick={openAddModal}
+              className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-sm transition-all shadow-lg shadow-indigo-200"
+            >
+              <Plus size={18} />
+              Add Entry
+            </button>
+          )}
+          
           {/* Search */}
           <div className="relative flex-1 sm:flex-none sm:w-48">
             <input
@@ -231,12 +313,17 @@ const HistoryLog: React.FC<HistoryLogProps> = ({
               <div className="space-y-3">
                 {txs.map(tx => {
                   const item = getItem(tx.itemId);
+                  const isWIP = tx.type === 'WIP';
                   return (
-                    <div key={tx.id} className="bg-white border-2 border-slate-50 p-5 sm:p-6 rounded-[24px] sm:rounded-[32px] flex flex-col sm:flex-row gap-4 sm:gap-6 items-start sm:items-center shadow-sm hover:shadow-md transition-shadow">
+                    <div key={tx.id} className={`p-5 sm:p-6 rounded-[24px] sm:rounded-[32px] flex flex-col sm:flex-row gap-4 sm:gap-6 items-start sm:items-center shadow-sm hover:shadow-md transition-shadow ${
+                      isWIP 
+                        ? 'bg-amber-50 border-2 border-amber-200' 
+                        : 'bg-white border-2 border-slate-50'
+                    }`}>
                       <div className={`p-4 rounded-2xl shrink-0 self-start sm:self-center ${
                         tx.type === 'IN' ? 'bg-indigo-50 text-indigo-600' : 
                         tx.type === 'OUT' ? 'bg-slate-900 text-white' : 
-                        'bg-amber-50 text-amber-600'
+                        'bg-amber-200 text-amber-700 border-2 border-amber-300'
                       }`}>
                         {tx.type === 'IN' && <ArrowDown size={28} />}
                         {tx.type === 'OUT' && <ArrowUp size={28} />}
@@ -246,14 +333,19 @@ const HistoryLog: React.FC<HistoryLogProps> = ({
                       <div className="flex-1 min-w-0 w-full">
                         <div className="flex justify-between items-start mb-1">
                           <div>
-                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">{item?.category || 'General'}</span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">{item?.category || 'General'}</span>
+                              {isWIP && (
+                                <span className="text-[9px] font-black text-amber-700 bg-amber-200 px-2 py-0.5 rounded uppercase">Work In Progress</span>
+                              )}
+                            </div>
                             <h4 className="font-black text-lg sm:text-xl text-slate-800 truncate leading-tight">{item?.name || 'Deleted Item'}</h4>
                           </div>
                           <div className="text-right shrink-0">
                             <div className={`text-2xl font-black tabular-nums tracking-tighter ${
-                              tx.type === 'IN' ? 'text-indigo-600' : 'text-slate-900'
+                              tx.type === 'IN' ? 'text-indigo-600' : tx.type === 'WIP' ? 'text-amber-600' : 'text-slate-900'
                             }`}>
-                              {tx.type === 'IN' ? '+' : '-'}{tx.quantity}
+                              {tx.type === 'IN' ? '+' : tx.type === 'WIP' ? '⏳' : '-'}{tx.quantity}
                             </div>
                             <div className="text-[10px] font-bold text-slate-400 uppercase">{item?.unit}</div>
                           </div>
@@ -376,10 +468,10 @@ const HistoryLog: React.FC<HistoryLogProps> = ({
       {/* Edit Modal */}
       {editingTx && (
         <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[100] flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-md rounded-[32px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-gradient-to-r from-indigo-500 to-purple-500 text-white">
+          <div className="bg-white w-full max-w-lg rounded-[32px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 max-h-[90vh] flex flex-col">
+            <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-gradient-to-r from-indigo-500 to-purple-500 text-white shrink-0">
               <div>
-                <h2 className="text-xl font-black">Edit Entry Details</h2>
+                <h2 className="text-xl font-black">Edit Entry {isAdmin && '(Admin)'}</h2>
                 <p className="text-[10px] font-bold text-white/70 uppercase tracking-widest">
                   {getItem(editingTx.itemId)?.name || 'Item'} • {formatTime(editingTx.timestamp)}
                 </p>
@@ -389,41 +481,124 @@ const HistoryLog: React.FC<HistoryLogProps> = ({
               </button>
             </div>
 
-            <div className="p-6 space-y-5">
+            <div className="p-6 space-y-4 overflow-y-auto">
+              {/* Admin-only fields */}
+              {isAdmin && (
+                <>
+                  <div>
+                    <label className="block text-[10px] font-black text-indigo-500 uppercase tracking-widest mb-1.5">
+                      Item <span className="text-indigo-300">(Admin)</span>
+                    </label>
+                    <select
+                      value={editItemId}
+                      onChange={(e) => setEditItemId(e.target.value)}
+                      className="w-full bg-slate-50 border-2 border-indigo-100 rounded-2xl px-5 py-3 focus:border-indigo-500 outline-none font-medium"
+                    >
+                      {items.map(item => (
+                        <option key={item.id} value={item.id}>{item.name} ({item.category})</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[10px] font-black text-indigo-500 uppercase tracking-widest mb-1.5">
+                        Type <span className="text-indigo-300">(Admin)</span>
+                      </label>
+                      <select
+                        value={editType}
+                        onChange={(e) => setEditType(e.target.value as TransactionType)}
+                        className={`w-full border-2 rounded-2xl px-5 py-3 focus:border-indigo-500 outline-none font-black ${
+                          editType === 'IN' ? 'bg-emerald-50 border-emerald-200 text-emerald-700' :
+                          editType === 'WIP' ? 'bg-amber-50 border-amber-200 text-amber-700' :
+                          'bg-slate-100 border-slate-200 text-slate-700'
+                        }`}
+                      >
+                        <option value="IN">IN (Receive)</option>
+                        <option value="OUT">OUT (Issue)</option>
+                        <option value="WIP">WIP (In Progress)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-black text-indigo-500 uppercase tracking-widest mb-1.5">
+                        Quantity <span className="text-indigo-300">(Admin)</span>
+                      </label>
+                      <input
+                        type="number"
+                        min="0.01"
+                        step="0.01"
+                        value={editQuantity}
+                        onChange={(e) => setEditQuantity(e.target.value)}
+                        className="w-full bg-slate-50 border-2 border-indigo-100 rounded-2xl px-5 py-3 focus:border-indigo-500 outline-none font-black text-xl tabular-nums"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[10px] font-black text-indigo-500 uppercase tracking-widest mb-1.5">
+                        User <span className="text-indigo-300">(Admin)</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={editUser}
+                        onChange={(e) => setEditUser(e.target.value)}
+                        className="w-full bg-slate-50 border-2 border-indigo-100 rounded-2xl px-5 py-3 focus:border-indigo-500 outline-none font-medium"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-black text-indigo-500 uppercase tracking-widest mb-1.5">
+                        Reason <span className="text-indigo-300">(Admin)</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={editReason}
+                        onChange={(e) => setEditReason(e.target.value)}
+                        className="w-full bg-slate-50 border-2 border-indigo-100 rounded-2xl px-5 py-3 focus:border-indigo-500 outline-none font-medium"
+                      />
+                    </div>
+                  </div>
+
+                  <hr className="border-slate-200 my-2" />
+                </>
+              )}
+
               <div>
                 <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
                   Location <span className="text-slate-300">(Optional)</span>
                 </label>
                 <input 
                   type="text" placeholder="e.g. Site A, Block 2"
-                  className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-4 focus:border-indigo-500 outline-none font-medium text-base"
+                  className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-3 focus:border-indigo-500 outline-none font-medium"
                   value={editLocation}
                   onChange={(e) => setEditLocation(e.target.value)}
                 />
               </div>
 
-              <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
-                  Amount ₹ <span className="text-slate-300">(Optional)</span>
-                </label>
-                <input 
-                  type="number" step="0.01" placeholder="0.00"
-                  className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-4 focus:border-indigo-500 outline-none font-bold text-lg tabular-nums"
-                  value={editAmount}
-                  onChange={(e) => setEditAmount(e.target.value)}
-                />
-              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
+                    Amount ₹ <span className="text-slate-300">(Optional)</span>
+                  </label>
+                  <input 
+                    type="number" step="0.01" placeholder="0.00"
+                    className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-3 focus:border-indigo-500 outline-none font-bold tabular-nums"
+                    value={editAmount}
+                    onChange={(e) => setEditAmount(e.target.value)}
+                  />
+                </div>
 
-              <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
-                  Bill / Invoice No. <span className="text-slate-300">(Optional)</span>
-                </label>
-                <input 
-                  type="text" placeholder="e.g. INV-2024-001"
-                  className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-4 focus:border-indigo-500 outline-none font-medium text-base"
-                  value={editBillNumber}
-                  onChange={(e) => setEditBillNumber(e.target.value)}
-                />
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
+                    Bill / Invoice No.
+                  </label>
+                  <input 
+                    type="text" placeholder="e.g. INV-001"
+                    className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-3 focus:border-indigo-500 outline-none font-medium"
+                    value={editBillNumber}
+                    onChange={(e) => setEditBillNumber(e.target.value)}
+                  />
+                </div>
               </div>
 
               <div className="flex gap-3 pt-2">
@@ -438,6 +613,162 @@ const HistoryLog: React.FC<HistoryLogProps> = ({
                   className="flex-1 py-4 rounded-2xl font-black text-white bg-indigo-600 hover:bg-indigo-700 shadow-xl shadow-indigo-200 transition-all"
                 >
                   Save Changes
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Transaction Modal (Admin Only) */}
+      {showAddModal && isAdmin && (
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[100] flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-lg rounded-[32px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 max-h-[90vh] flex flex-col">
+            <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-gradient-to-r from-emerald-500 to-teal-500 text-white shrink-0">
+              <div>
+                <h2 className="text-xl font-black">Add New Entry</h2>
+                <p className="text-[10px] font-bold text-white/70 uppercase tracking-widest">Admin Manual Entry</p>
+              </div>
+              <button onClick={() => setShowAddModal(false)} className="bg-white/10 p-2 rounded-full hover:bg-white/20 transition-colors">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M18 6 6 18M6 6l12 12"/></svg>
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4 overflow-y-auto">
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
+                  Select Item *
+                </label>
+                <select
+                  value={newItemId}
+                  onChange={(e) => setNewItemId(e.target.value)}
+                  className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-3 focus:border-indigo-500 outline-none font-medium"
+                  required
+                >
+                  <option value="">-- Select an item --</option>
+                  {items.map(item => (
+                    <option key={item.id} value={item.id}>{item.name} ({item.category})</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
+                    Transaction Type *
+                  </label>
+                  <select
+                    value={newType}
+                    onChange={(e) => setNewType(e.target.value as TransactionType)}
+                    className={`w-full border-2 rounded-2xl px-5 py-3 focus:border-indigo-500 outline-none font-black ${
+                      newType === 'IN' ? 'bg-emerald-50 border-emerald-200 text-emerald-700' :
+                      newType === 'WIP' ? 'bg-amber-50 border-amber-200 text-amber-700' :
+                      'bg-slate-100 border-slate-200 text-slate-700'
+                    }`}
+                  >
+                    <option value="IN">IN (Receive)</option>
+                    <option value="OUT">OUT (Issue)</option>
+                    <option value="WIP">WIP (In Progress)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
+                    Quantity *
+                  </label>
+                  <input
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    value={newQuantity}
+                    onChange={(e) => setNewQuantity(e.target.value)}
+                    placeholder="1"
+                    className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-3 focus:border-indigo-500 outline-none font-black text-xl tabular-nums"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
+                    User Name
+                  </label>
+                  <input
+                    type="text"
+                    value={newUser}
+                    onChange={(e) => setNewUser(e.target.value)}
+                    placeholder={session.user.displayName}
+                    className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-3 focus:border-indigo-500 outline-none font-medium"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
+                    Reason *
+                  </label>
+                  <input
+                    type="text"
+                    value={newReason}
+                    onChange={(e) => setNewReason(e.target.value)}
+                    placeholder="e.g. Site delivery"
+                    className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-3 focus:border-indigo-500 outline-none font-medium"
+                    required
+                  />
+                </div>
+              </div>
+
+              <hr className="border-slate-200 my-2" />
+
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
+                  Location <span className="text-slate-300">(Optional)</span>
+                </label>
+                <input 
+                  type="text" 
+                  placeholder="e.g. Site A, Block 2"
+                  className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-3 focus:border-indigo-500 outline-none font-medium"
+                  value={newLocation}
+                  onChange={(e) => setNewLocation(e.target.value)}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
+                    Amount ₹
+                  </label>
+                  <input 
+                    type="number" step="0.01" placeholder="0.00"
+                    className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-3 focus:border-indigo-500 outline-none font-bold tabular-nums"
+                    value={newAmount}
+                    onChange={(e) => setNewAmount(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
+                    Bill / Invoice No.
+                  </label>
+                  <input 
+                    type="text" placeholder="e.g. INV-001"
+                    className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-3 focus:border-indigo-500 outline-none font-medium"
+                    value={newBillNumber}
+                    onChange={(e) => setNewBillNumber(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button 
+                  onClick={() => setShowAddModal(false)}
+                  className="flex-1 py-4 rounded-2xl font-black text-slate-500 bg-slate-100 hover:bg-slate-200 transition-all"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={saveNewTransaction}
+                  disabled={!newItemId || !newReason || !newQuantity}
+                  className="flex-1 py-4 rounded-2xl font-black text-white bg-emerald-600 hover:bg-emerald-700 shadow-xl shadow-emerald-200 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Add Entry
                 </button>
               </div>
             </div>

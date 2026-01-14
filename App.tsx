@@ -401,8 +401,10 @@ const App: React.FC = () => {
           <HistoryLog 
             transactions={transactions} 
             items={items} 
-            session={session} 
+            session={session}
+            categories={categories}
             onExport={() => {}} 
+            onAddTransaction={addTransaction}
             onUpdateTransaction={handleUpdateTransaction} 
             onDeleteTransaction={handleDeleteTransaction} 
           />
