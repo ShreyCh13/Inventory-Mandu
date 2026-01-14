@@ -2,9 +2,11 @@
 import React from 'react';
 import { isSupabaseConfigured } from '../lib/supabase';
 import { Database, ExternalLink } from './Icons';
+import { AuthSession } from '../types';
 
 interface SyncSettingsProps {
   onClose: () => void;
+  session: AuthSession;
 }
 
 // Extract project ID from Supabase URL
@@ -15,8 +17,44 @@ const getSupabaseProjectId = (): string | null => {
   return match ? match[1] : null;
 };
 
-const SyncSettings: React.FC<SyncSettingsProps> = ({ onClose }) => {
+const SyncSettings: React.FC<SyncSettingsProps> = ({ onClose, session }) => {
   const projectId = getSupabaseProjectId();
+
+  // Only allow admins to access database settings
+  if (session.user.role !== 'admin') {
+    return (
+      <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-xl z-[150] flex items-center justify-center p-4">
+        <div className="bg-white w-full max-w-md rounded-[40px] shadow-2xl overflow-hidden flex flex-col">
+          <div className="p-8 bg-gradient-to-r from-red-600 to-pink-600 text-white flex justify-between items-center">
+            <div>
+              <h2 className="text-2xl font-black">Access Denied</h2>
+              <p className="text-xs font-bold text-white/70 uppercase tracking-widest mt-1">Admin Only</p>
+            </div>
+            <button onClick={onClose} className="bg-white/10 p-2 rounded-full hover:bg-white/20 transition-colors">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M18 6 6 18M6 6l12 12"/></svg>
+            </button>
+          </div>
+          <div className="p-8 text-center">
+            <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-red-600">
+                <path d="M18 6 6 18M6 6l12 12"/>
+              </svg>
+            </div>
+            <h3 className="font-black text-slate-700 mb-2 text-lg">Database Settings Restricted</h3>
+            <p className="text-sm text-slate-500 mb-6">
+              Only administrators can access database settings and Supabase dashboard links.
+            </p>
+            <button 
+              onClick={onClose}
+              className="w-full py-4 bg-slate-100 text-slate-600 rounded-2xl font-black hover:bg-slate-200 transition-all"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-xl z-[150] flex items-center justify-center p-4">

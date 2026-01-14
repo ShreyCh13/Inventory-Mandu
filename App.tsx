@@ -381,9 +381,11 @@ const App: React.FC = () => {
             </button>
           </>
         )}
-        <button onClick={() => setShowSyncSettings(true)} className="p-4 rounded-2xl text-slate-400 hover:bg-slate-100 md:mt-auto relative">
-          <Settings size={28} />
-        </button>
+        {session.user.role === 'admin' && (
+          <button onClick={() => setShowSyncSettings(true)} className="p-4 rounded-2xl text-slate-400 hover:bg-slate-100 md:mt-auto relative">
+            <Settings size={28} />
+          </button>
+        )}
         {/* User Menu */}
         <div className="relative md:mb-6">
           <button 
@@ -513,7 +515,8 @@ const App: React.FC = () => {
 
       {showSyncSettings && (
         <SyncSettings 
-          onClose={() => setShowSyncSettings(false)} 
+          onClose={() => setShowSyncSettings(false)}
+          session={session}
         />
       )}
     </div>
