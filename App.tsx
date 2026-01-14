@@ -437,8 +437,6 @@ const App: React.FC = () => {
 
       {showSyncSettings && (
         <SyncSettings 
-          settings={settings} 
-          onSave={handleSaveSettings} 
           onClose={() => setShowSyncSettings(false)} 
         />
       )}
