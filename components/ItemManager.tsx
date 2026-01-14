@@ -43,36 +43,9 @@ const ItemManager: React.FC<ItemManagerProps> = ({ items, transactions }) => {
   const categories = Object.keys(groupedItems).sort();
 
   // Summary stats
-  const totalItems = items.length;
-  const totalCategories = new Set(items.map(i => i.category)).size;
-  const lowStockItems = items.filter(item => {
-    const stock = calculateStock(transactions, item.id);
-    return stock <= item.minStock && stock > 0;
-  }).length;
-  const outOfStock = items.filter(item => calculateStock(transactions, item.id) <= 0).length;
 
   return (
     <div className="space-y-6">
-      {/* Summary Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <div className="bg-white rounded-2xl p-5 border-2 border-slate-100">
-          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total Items</p>
-          <p className="text-3xl font-black text-slate-900 tabular-nums">{totalItems}</p>
-        </div>
-        <div className="bg-white rounded-2xl p-5 border-2 border-slate-100">
-          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Categories</p>
-          <p className="text-3xl font-black text-indigo-600 tabular-nums">{totalCategories}</p>
-        </div>
-        <div className="bg-white rounded-2xl p-5 border-2 border-orange-100">
-          <p className="text-[10px] font-black text-orange-500 uppercase tracking-widest">Low Stock</p>
-          <p className="text-3xl font-black text-orange-600 tabular-nums">{lowStockItems}</p>
-        </div>
-        <div className="bg-white rounded-2xl p-5 border-2 border-red-100">
-          <p className="text-[10px] font-black text-red-400 uppercase tracking-widest">Out of Stock</p>
-          <p className="text-3xl font-black text-red-500 tabular-nums">{outOfStock}</p>
-        </div>
-      </div>
-
       {/* Search Bar */}
       <div className="relative">
         <input
