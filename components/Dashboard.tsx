@@ -1,13 +1,14 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState } from 'react';
 import { InventoryItem, Transaction, TransactionType, AuthSession, User } from '../types';
 import { ArrowDown, ArrowUp, Timer, Package, History } from './Icons';
-import * as db from '../lib/db';
 
 interface DashboardProps {
   items: InventoryItem[];
   transactions: Transaction[];
   session: AuthSession;
   categories: string[];
+  users: User[];
+  stockLevels: Record<string, { stock: number; wip: number }>;
   onAction: (type: TransactionType, item: InventoryItem) => void;
   onAddNewItem: () => void;
   onUpdateTransaction?: (id: string, updates: Partial<Transaction>) => void;
@@ -18,7 +19,9 @@ const Dashboard: React.FC<DashboardProps> = ({
   items, 
   transactions, 
   session, 
-  categories, 
+  categories,
+  users,
+  stockLevels,
   onAction, 
   onAddNewItem, 
   onUpdateTransaction, 
@@ -33,17 +36,6 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [editLocation, setEditLocation] = useState('');
   const [editAmount, setEditAmount] = useState('');
   const [editBillNumber, setEditBillNumber] = useState('');
-
-  // Get users for displaying creator names
-  const [users, setUsers] = useState<User[]>([]);
-  
-  useEffect(() => {
-    const loadUsers = async () => {
-      const loadedUsers = await db.getUsers();
-      setUsers(loadedUsers);
-    };
-    loadUsers();
-  }, []);
 
   const getUserName = (userId: string) => {
     const user = users.find(u => u.id === userId);
@@ -95,15 +87,16 @@ const Dashboard: React.FC<DashboardProps> = ({
     }).format(new Date(ts));
   };
 
-  // Calculated Inventory
+  // Calculated Inventory - use accurate stock levels from database
   const inventoryStats = useMemo(() => {
     return items.map(item => {
-      const net = db.calculateStock(transactions, item.id);
-      const wip = db.calculateWIP(transactions, item.id);
+      const levels = stockLevels[item.id] || { stock: 0, wip: 0 };
+      const net = levels.stock;
+      const wip = levels.wip;
       const available = net - wip; // Available = Total - WIP
       return { ...item, net, wip, available };
     });
-  }, [items, transactions]);
+  }, [items, stockLevels]);
 
   // Grouping by Folder (Category)
   const groupedItems = useMemo(() => {

@@ -319,8 +319,7 @@ export const deleteItem = async (id: string): Promise<boolean> => {
     return true;
   }
 
-  // Delete transactions first (cascade)
-  await supabase.from('transactions').delete().eq('item_id', id);
+  // Schema handles cascade delete automatically, no need to delete transactions manually
 
   const { error } = await supabase
     .from('items')
@@ -451,7 +450,7 @@ export const createTransaction = async (
     location: tx.location || null,
     amount: tx.amount || null,
     bill_number: tx.billNumber || null,
-    created_by: tx.createdBy
+    created_by: tx.createdBy || null
   };
 
   const { data, error } = await supabase
@@ -563,6 +562,60 @@ export const saveSettings = async (settings: AppSettings): Promise<boolean> => {
 
 // ============ STOCK CALCULATIONS ============
 
+// Get stock levels from database (accurate - uses ALL transactions, not limited array)
+export const getStockLevels = async (): Promise<Record<string, { stock: number; wip: number }>> => {
+  if (!isSupabaseConfigured()) {
+    // Fallback to client-side calculation with all transactions
+    const allTransactions = await getTransactions();
+    const levels: Record<string, { stock: number; wip: number }> = {};
+    
+    allTransactions.forEach(t => {
+      if (!levels[t.itemId]) {
+        levels[t.itemId] = { stock: 0, wip: 0 };
+      }
+      if (t.type === 'IN') {
+        levels[t.itemId].stock += t.quantity;
+      } else if (t.type === 'OUT') {
+        levels[t.itemId].stock -= t.quantity;
+      } else if (t.type === 'WIP') {
+        levels[t.itemId].wip += t.quantity;
+      }
+    });
+    
+    return levels;
+  }
+
+  // Use database aggregation for accurate stock calculation
+  const { data: stockData, error: stockError } = await supabase
+    .from('transactions')
+    .select('item_id, type, quantity');
+
+  if (stockError || !stockData) {
+    console.error('Error fetching stock levels:', stockError);
+    return {};
+  }
+
+  const levels: Record<string, { stock: number; wip: number }> = {};
+  
+  stockData.forEach((row: { item_id: string; type: string; quantity: number }) => {
+    const itemId = row.item_id;
+    if (!levels[itemId]) {
+      levels[itemId] = { stock: 0, wip: 0 };
+    }
+    
+    if (row.type === 'IN') {
+      levels[itemId].stock += row.quantity;
+    } else if (row.type === 'OUT') {
+      levels[itemId].stock -= row.quantity;
+    } else if (row.type === 'WIP') {
+      levels[itemId].wip += row.quantity;
+    }
+  });
+
+  return levels;
+};
+
+// Client-side calculation (for backward compatibility and offline mode)
 export const calculateStock = (transactions: Transaction[], itemId: string): number => {
   return transactions
     .filter(t => t.itemId === itemId)

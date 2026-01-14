@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { InventoryItem, Transaction, TransactionType, AppSettings, AuthSession, Category } from './types';
+import { InventoryItem, Transaction, TransactionType, AppSettings, AuthSession, Category, User } from './types';
 import { supabase, isSupabaseConfigured, subscribeToTable } from './lib/supabase';
 import * as db from './lib/db';
 import Dashboard from './components/Dashboard';
@@ -41,6 +41,8 @@ const App: React.FC = () => {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [settings, setSettings] = useState<AppSettings>({ googleSheetUrl: '' });
+  const [users, setUsers] = useState<User[]>([]);
+  const [stockLevels, setStockLevels] = useState<Record<string, { stock: number; wip: number }>>({});
   
   const [isLoading, setIsLoading] = useState(true);
   const [isOnline, setIsOnline] = useState(true);
@@ -59,17 +61,21 @@ const App: React.FC = () => {
     const loadData = async () => {
       setIsLoading(true);
       try {
-        const [loadedItems, loadedTransactions, loadedCategories, loadedSettings] = await Promise.all([
+        const [loadedItems, loadedTransactions, loadedCategories, loadedSettings, loadedUsers, loadedStockLevels] = await Promise.all([
           db.getItems(),
-          db.getTransactions({ limit: 500 }), // Load recent 500 for performance
+          db.getTransactions({ limit: 500 }), // Load recent 500 for display only
           db.getCategories(),
-          db.getSettings()
+          db.getSettings(),
+          db.getUsers(),
+          db.getStockLevels() // Get accurate stock from ALL transactions
         ]);
 
         setItems(loadedItems);
         setTransactions(loadedTransactions);
         setCategories(loadedCategories.length > 0 ? loadedCategories.map(c => c.name) : DEFAULT_CATEGORIES);
         setSettings(loadedSettings);
+        setUsers(loadedUsers);
+        setStockLevels(loadedStockLevels);
         setLastSync(new Date());
       } catch (error) {
         console.error('Error loading data:', error);
@@ -98,9 +104,13 @@ const App: React.FC = () => {
     // Subscribe to transactions changes
     const transactionsChannel = subscribeToTable<Transaction>('transactions', async (payload) => {
       console.log('Transactions changed:', payload.eventType);
-      // Reload recent transactions
-      const freshTransactions = await db.getTransactions({ limit: 500 });
+      // Reload recent transactions and stock levels
+      const [freshTransactions, freshStockLevels] = await Promise.all([
+        db.getTransactions({ limit: 500 }),
+        db.getStockLevels()
+      ]);
       setTransactions(freshTransactions);
+      setStockLevels(freshStockLevels);
       setLastSync(new Date());
     });
 
@@ -169,7 +179,7 @@ const App: React.FC = () => {
       const createdItem = await db.createItem({
         ...newItem,
         categoryId: '',
-        createdBy: session?.user.id || ''
+        createdBy: session?.user.id || null
       });
       if (createdItem) {
         setItems(prev => [...prev, createdItem]);
@@ -185,6 +195,9 @@ const App: React.FC = () => {
 
     if (newTransaction) {
       setTransactions(prev => [newTransaction, ...prev]);
+      // Update stock levels after new transaction
+      const updatedStockLevels = await db.getStockLevels();
+      setStockLevels(updatedStockLevels);
       setShowTransactionModal(null);
 
       // Sync to Google Sheets
@@ -208,6 +221,11 @@ const App: React.FC = () => {
       setTransactions(prev => prev.map(t => 
         t.id === id ? { ...t, ...updates } : t
       ));
+      // Update stock levels if quantity or type changed
+      if (updates.quantity !== undefined || updates.type !== undefined) {
+        const updatedStockLevels = await db.getStockLevels();
+        setStockLevels(updatedStockLevels);
+      }
     }
   };
 
@@ -215,6 +233,9 @@ const App: React.FC = () => {
     const success = await db.deleteTransaction(id);
     if (success) {
       setTransactions(prev => prev.filter(t => t.id !== id));
+      // Update stock levels after deletion
+      const updatedStockLevels = await db.getStockLevels();
+      setStockLevels(updatedStockLevels);
     }
   };
 
@@ -390,6 +411,8 @@ const App: React.FC = () => {
             transactions={transactions}
             session={session}
             categories={categories}
+            users={users}
+            stockLevels={stockLevels}
             onAction={(type, item) => setShowTransactionModal({ type, item })}
             onAddNewItem={() => setShowTransactionModal({ type: 'IN' })}
             onUpdateTransaction={handleUpdateTransaction}
@@ -403,7 +426,7 @@ const App: React.FC = () => {
             items={items} 
             session={session}
             categories={categories}
-            onExport={() => {}} 
+            users={users}
             onAddTransaction={addTransaction}
             onUpdateTransaction={handleUpdateTransaction} 
             onDeleteTransaction={handleDeleteTransaction} 

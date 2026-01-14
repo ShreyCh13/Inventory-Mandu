@@ -8,7 +8,7 @@ interface HistoryLogProps {
   items: InventoryItem[];
   session: AuthSession;
   categories: string[];
-  onExport: () => void;
+  users: User[];
   onAddTransaction?: (tx: Transaction) => void;
   onUpdateTransaction?: (id: string, updates: Partial<Transaction>) => void;
   onDeleteTransaction?: (id: string) => void;
@@ -21,7 +21,7 @@ const HistoryLog: React.FC<HistoryLogProps> = ({
   items, 
   session, 
   categories,
-  onExport, 
+  users,
   onAddTransaction,
   onUpdateTransaction, 
   onDeleteTransaction 
@@ -41,17 +41,6 @@ const HistoryLog: React.FC<HistoryLogProps> = ({
   const [filterDateFrom, setFilterDateFrom] = useState<string>('');
   const [filterDateTo, setFilterDateTo] = useState<string>('');
   const [showFilters, setShowFilters] = useState(false);
-  
-  // Get users for displaying creator names
-  const [users, setUsers] = useState<User[]>([]);
-  
-  useEffect(() => {
-    const loadUsers = async () => {
-      const loadedUsers = await db.getUsers();
-      setUsers(loadedUsers);
-    };
-    loadUsers();
-  }, []);
 
   useEffect(() => {
     const loadCount = async () => {

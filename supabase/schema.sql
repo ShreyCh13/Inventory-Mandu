@@ -157,6 +157,7 @@ ALTER PUBLICATION supabase_realtime ADD TABLE app_settings;
 -- ============================================
 
 -- View: Current stock levels for all items
+-- Note: WIP does NOT subtract from stock - items are still in inventory
 CREATE OR REPLACE VIEW current_stock AS
 SELECT 
     i.id,
@@ -166,9 +167,13 @@ SELECT
     i.min_stock,
     COALESCE(
         SUM(CASE WHEN t.type = 'IN' THEN t.quantity ELSE 0 END) -
-        SUM(CASE WHEN t.type IN ('OUT', 'WIP') THEN t.quantity ELSE 0 END),
+        SUM(CASE WHEN t.type = 'OUT' THEN t.quantity ELSE 0 END),
         0
-    ) as current_quantity
+    ) as current_quantity,
+    COALESCE(
+        SUM(CASE WHEN t.type = 'WIP' THEN t.quantity ELSE 0 END),
+        0
+    ) as wip_quantity
 FROM items i
 LEFT JOIN categories c ON i.category_id = c.id
 LEFT JOIN transactions t ON i.id = t.item_id
