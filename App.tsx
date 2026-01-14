@@ -10,7 +10,7 @@ import SyncSettings from './components/SyncSettings';
 import LoginPage from './components/LoginPage';
 import UserManager from './components/UserManager';
 import CategoryManager from './components/CategoryManager';
-import { Plus, Minus, Package, History, LayoutDashboard, Cloud, Settings, User, LogOut, Users, Folder } from './components/Icons';
+import { Plus, Minus, Package, History, LayoutDashboard, Cloud, Settings, User as UserIcon, LogOut, Users, Folder } from './components/Icons';
 
 // Default categories - will be loaded from database
 export const DEFAULT_CATEGORIES = [
@@ -186,7 +186,7 @@ const App: React.FC = () => {
       const createdItem = await db.createItem({
         ...newItem,
         categoryId: '',
-        createdBy: session?.user.id || null
+        createdBy: session?.user.id || ''
       });
       if (createdItem) {
         setItems(prev => [...prev, createdItem]);
@@ -392,7 +392,7 @@ const App: React.FC = () => {
             onClick={() => setShowUserMenu(!showUserMenu)} 
             className="p-4 rounded-2xl text-slate-400 hover:bg-slate-100 transition-all"
           >
-            <User size={28} />
+            <UserIcon size={28} />
           </button>
           {showUserMenu && (
             <div className="absolute bottom-full left-0 mb-2 md:left-full md:bottom-0 md:top-auto md:mb-0 md:ml-2 bg-white rounded-2xl shadow-2xl border border-slate-200 p-4 min-w-[200px] z-[100]">
