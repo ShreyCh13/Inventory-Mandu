@@ -126,6 +126,10 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
     setError('');
   };
 
+  const toggleExpanded = (category: string) => {
+    setExpandedCategory(prev => prev === category ? null : category);
+  };
+
   const startEditItem = (item: InventoryItem) => {
     setEditingItem(item);
     setEditItemName(item.name);
@@ -255,7 +259,8 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
             return (
               <div key={category} className="space-y-3">
                 <div 
-                  className="bg-slate-50 rounded-2xl p-4 flex items-center justify-between hover:bg-slate-100 transition-colors group"
+                  className="bg-slate-50 rounded-2xl p-4 flex items-center justify-between hover:bg-slate-100 transition-colors group cursor-pointer"
+                  onClick={() => toggleExpanded(category)}
                 >
                   <div className="flex items-center gap-3 min-w-0">
                     <div className="w-10 h-10 bg-indigo-100 text-indigo-600 rounded-xl flex items-center justify-center shrink-0">
@@ -269,23 +274,31 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
                     </div>
                   </div>
                   
-                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div className="flex items-center gap-2 opacity-100 transition-opacity">
                     <button
-                      onClick={() => setExpandedCategory(expandedCategory === category ? null : category)}
-                      className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-white rounded-lg transition-all"
-                      title="Manage Items"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleExpanded(category);
+                      }}
+                      className="px-3 py-1.5 text-xs font-bold text-emerald-600 bg-emerald-50 rounded-lg hover:bg-emerald-100 transition-colors"
                     >
-                      <Package size={16} />
+                      {expandedCategory === category ? 'Hide Items' : 'Manage Items'}
                     </button>
                     <button
-                      onClick={() => startEdit(category)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        startEdit(category);
+                      }}
                       className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-white rounded-lg transition-all"
                       title="Edit Category"
                     >
                       <Edit size={16} />
                     </button>
                     <button
-                      onClick={() => handleDeleteCategory(category)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteCategory(category);
+                      }}
                       className={`p-2 rounded-lg transition-all ${
                         itemCount > 0 
                           ? 'text-slate-300 cursor-not-allowed' 
