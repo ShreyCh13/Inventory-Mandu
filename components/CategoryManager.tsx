@@ -331,22 +331,22 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
             return (
               <div key={category} className="space-y-3">
                 <div 
-                  className="bg-slate-50 rounded-2xl p-4 flex items-center justify-between hover:bg-slate-100 transition-colors group cursor-pointer"
+                  className="bg-slate-50 rounded-2xl p-4 flex flex-col gap-3 hover:bg-slate-100 transition-colors group cursor-pointer"
                   onClick={() => toggleExpanded(category)}
                 >
-                  <div className="flex items-center gap-3 min-w-0 flex-1">
+                  <div className="flex items-center gap-3 min-w-0">
                     <div className="w-10 h-10 bg-indigo-100 text-indigo-600 rounded-xl flex items-center justify-center shrink-0">
                       <Folder size={20} />
                     </div>
                     <div className="min-w-0">
-                      <p className="font-bold text-slate-900 leading-tight break-words">{category}</p>
+                      <p className="font-bold text-slate-900 leading-tight truncate">{category}</p>
                       <p className="text-xs text-slate-500">
                         {itemCount} {itemCount === 1 ? 'item' : 'items'}
                       </p>
                     </div>
                   </div>
-                  
-                  <div className="flex items-center gap-2 opacity-100 transition-opacity shrink-0 ml-3">
+
+                  <div className="flex items-center gap-2">
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
