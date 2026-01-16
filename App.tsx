@@ -327,6 +327,14 @@ const App: React.FC = () => {
     }
   };
 
+  const handleDeleteItem = async (itemId: string) => {
+    const success = await db.deleteItem(itemId);
+    if (success) {
+      setItems(prev => prev.filter(item => item.id !== itemId));
+      setTransactions(prev => prev.filter(t => t.itemId !== itemId));
+    }
+  };
+
   const handleUpdateCategories = async (newCategories: string[]) => {
     // Sync categories with database
     const existingCategories = await db.getCategories();
@@ -513,6 +521,7 @@ const App: React.FC = () => {
             onUpdateItemCategory={updateItemCategory}
             onUpdateItem={handleUpdateItem}
             onCreateItem={handleCreateItem}
+            onDeleteItem={handleDeleteItem}
           />
         )}
       </main>

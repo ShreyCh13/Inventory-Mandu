@@ -9,6 +9,7 @@ interface CategoryManagerProps {
   onUpdateItemCategory: (itemId: string, newCategory: string) => void;
   onUpdateItem: (itemId: string, updates: Partial<InventoryItem>) => void;
   onCreateItem: (item: Omit<InventoryItem, 'id'>) => void | Promise<void>;
+  onDeleteItem: (itemId: string) => void | Promise<void>;
 }
 
 const CategoryManager: React.FC<CategoryManagerProps> = ({ 
@@ -17,7 +18,8 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
   onUpdate,
   onUpdateItemCategory,
   onUpdateItem,
-  onCreateItem
+  onCreateItem,
+  onDeleteItem
 }) => {
   const [showAddCategory, setShowAddCategory] = useState(false);
   const [editingCategory, setEditingCategory] = useState<string | null>(null);
@@ -241,6 +243,13 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
     resetAddItemForm();
   };
 
+  const handleDeleteItem = async (item: InventoryItem) => {
+    if (!confirm(`Delete item "${item.name}"? This removes it completely.`)) return;
+    setIsItemProcessing(true);
+    await onDeleteItem(item.id);
+    setIsItemProcessing(false);
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -395,12 +404,20 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
                               {item.unit} • Min {item.minStock}
                             </p>
                           </div>
-                          <button
-                            onClick={() => startEditItem(item)}
-                            className="px-3 py-1.5 text-xs font-bold text-indigo-600 bg-indigo-50 rounded-lg hover:bg-indigo-100 transition-colors"
-                          >
-                            Edit
-                          </button>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => startEditItem(item)}
+                              className="px-3 py-1.5 text-xs font-bold text-indigo-600 bg-indigo-50 rounded-lg hover:bg-indigo-100 transition-colors"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => handleDeleteItem(item)}
+                              className="px-3 py-1.5 text-xs font-bold text-red-600 bg-red-50 rounded-lg hover:bg-red-100 transition-colors"
+                            >
+                              Delete
+                            </button>
+                          </div>
                         </div>
                       ))
                     ) : (
