@@ -320,6 +320,13 @@ const App: React.FC = () => {
     }
   };
 
+  const handleCreateItem = async (item: Omit<InventoryItem, 'id'>) => {
+    const created = await db.createItem(item);
+    if (created) {
+      setItems(prev => [...prev, created]);
+    }
+  };
+
   const handleUpdateCategories = async (newCategories: string[]) => {
     // Sync categories with database
     const existingCategories = await db.getCategories();
@@ -505,6 +512,7 @@ const App: React.FC = () => {
             onUpdate={handleUpdateCategories}
             onUpdateItemCategory={updateItemCategory}
             onUpdateItem={handleUpdateItem}
+            onCreateItem={handleCreateItem}
           />
         )}
       </main>

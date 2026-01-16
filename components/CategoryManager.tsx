@@ -8,6 +8,7 @@ interface CategoryManagerProps {
   onUpdate: (categories: string[]) => void;
   onUpdateItemCategory: (itemId: string, newCategory: string) => void;
   onUpdateItem: (itemId: string, updates: Partial<InventoryItem>) => void;
+  onCreateItem: (item: Omit<InventoryItem, 'id'>) => void | Promise<void>;
 }
 
 const CategoryManager: React.FC<CategoryManagerProps> = ({ 
@@ -15,7 +16,8 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
   items, 
   onUpdate,
   onUpdateItemCategory,
-  onUpdateItem
+  onUpdateItem,
+  onCreateItem
 }) => {
   const [showAddCategory, setShowAddCategory] = useState(false);
   const [editingCategory, setEditingCategory] = useState<string | null>(null);
@@ -30,6 +32,12 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
   const [editItemCategory, setEditItemCategory] = useState('');
   const [itemError, setItemError] = useState('');
   const [isItemProcessing, setIsItemProcessing] = useState(false);
+  const [showAddItem, setShowAddItem] = useState(false);
+  const [addItemName, setAddItemName] = useState('');
+  const [addItemUnit, setAddItemUnit] = useState('');
+  const [addItemMinStock, setAddItemMinStock] = useState('0');
+  const [addItemCategory, setAddItemCategory] = useState('');
+  const [addItemError, setAddItemError] = useState('');
 
   // Get item count for each category
   const getCategoryItemCount = (category: string) => {
@@ -51,6 +59,15 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
     setEditItemCategory('');
     setItemError('');
     setIsItemProcessing(false);
+  };
+
+  const resetAddItemForm = () => {
+    setShowAddItem(false);
+    setAddItemName('');
+    setAddItemUnit('');
+    setAddItemMinStock('0');
+    setAddItemCategory('');
+    setAddItemError('');
   };
 
   const handleAddCategory = async () => {
@@ -178,6 +195,52 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
     resetItemForm();
   };
 
+  const openAddItem = (category: string) => {
+    setAddItemCategory(category);
+    setAddItemName('');
+    setAddItemUnit('');
+    setAddItemMinStock('0');
+    setAddItemError('');
+    setShowAddItem(true);
+  };
+
+  const handleAddItem = async () => {
+    setAddItemError('');
+    const trimmedName = addItemName.trim();
+    const trimmedUnit = addItemUnit.trim();
+    const parsedMinStock = Number(addItemMinStock);
+
+    if (!trimmedName) {
+      setAddItemError('Item name is required');
+      return;
+    }
+    if (!trimmedUnit) {
+      setAddItemError('Unit is required');
+      return;
+    }
+    if (Number.isNaN(parsedMinStock) || parsedMinStock < 0) {
+      setAddItemError('Min stock must be 0 or greater');
+      return;
+    }
+    if (!addItemCategory) {
+      setAddItemError('Category is required');
+      return;
+    }
+
+    setIsItemProcessing(true);
+    await onCreateItem({
+      name: trimmedName,
+      category: addItemCategory,
+      categoryId: '',
+      unit: trimmedUnit,
+      minStock: parsedMinStock,
+      description: '',
+      createdBy: ''
+    });
+    setIsItemProcessing(false);
+    resetAddItemForm();
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -262,25 +325,25 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
                   className="bg-slate-50 rounded-2xl p-4 flex items-center justify-between hover:bg-slate-100 transition-colors group cursor-pointer"
                   onClick={() => toggleExpanded(category)}
                 >
-                  <div className="flex items-center gap-3 min-w-0">
+                  <div className="flex items-center gap-3 min-w-0 flex-1">
                     <div className="w-10 h-10 bg-indigo-100 text-indigo-600 rounded-xl flex items-center justify-center shrink-0">
                       <Folder size={20} />
                     </div>
                     <div className="min-w-0">
-                      <p className="font-bold text-slate-900 truncate">{category}</p>
+                      <p className="font-bold text-slate-900 leading-tight break-words">{category}</p>
                       <p className="text-xs text-slate-500">
                         {itemCount} {itemCount === 1 ? 'item' : 'items'}
                       </p>
                     </div>
                   </div>
                   
-                  <div className="flex items-center gap-2 opacity-100 transition-opacity">
+                  <div className="flex items-center gap-2 opacity-100 transition-opacity shrink-0 ml-3">
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
                         toggleExpanded(category);
                       }}
-                      className="px-3 py-1.5 text-xs font-bold text-emerald-600 bg-emerald-50 rounded-lg hover:bg-emerald-100 transition-colors"
+                      className="px-3 py-1.5 text-[11px] font-bold text-emerald-600 bg-emerald-50 rounded-lg hover:bg-emerald-100 transition-colors whitespace-nowrap"
                     >
                       {expandedCategory === category ? 'Hide Items' : 'Manage Items'}
                     </button>
@@ -314,6 +377,15 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
 
                 {expandedCategory === category && (
                   <div className="bg-white border border-slate-100 rounded-2xl p-4 space-y-2">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openAddItem(category);
+                      }}
+                      className="w-full py-2.5 bg-indigo-50 text-indigo-600 rounded-xl font-bold text-sm hover:bg-indigo-100 transition-colors"
+                    >
+                      + Add Item to {category}
+                    </button>
                     {categoryItems.length > 0 ? (
                       categoryItems.map(item => (
                         <div key={item.id} className="flex items-center justify-between gap-3 p-3 bg-slate-50 rounded-xl">
@@ -353,6 +425,104 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
           <li>• Changes sync in real-time across all devices</li>
         </ul>
       </div>
+
+      {/* Add Item Modal */}
+      {showAddItem && (
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[120] flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-lg rounded-[32px] shadow-2xl overflow-hidden">
+            <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-gradient-to-r from-emerald-500 to-teal-500 text-white">
+              <div>
+                <h2 className="text-xl font-black">Add Item</h2>
+                <p className="text-[10px] font-bold text-white/70 uppercase tracking-widest">
+                  {addItemCategory}
+                </p>
+              </div>
+              <button onClick={resetAddItemForm} className="bg-white/10 p-2 rounded-full hover:bg-white/20 transition-colors">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M18 6 6 18M6 6l12 12"/></svg>
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {addItemError && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-600 text-sm font-medium">
+                  {addItemError}
+                </div>
+              )}
+
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
+                  Item Name
+                </label>
+                <input
+                  type="text"
+                  value={addItemName}
+                  onChange={(e) => setAddItemName(e.target.value)}
+                  className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-3 focus:border-emerald-500 outline-none font-medium"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
+                    Unit
+                  </label>
+                  <input
+                    type="text"
+                    value={addItemUnit}
+                    onChange={(e) => setAddItemUnit(e.target.value)}
+                    className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-3 focus:border-emerald-500 outline-none font-medium"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
+                    Min Stock
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={addItemMinStock}
+                    onChange={(e) => setAddItemMinStock(e.target.value)}
+                    className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-3 focus:border-emerald-500 outline-none font-medium tabular-nums"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
+                  Category
+                </label>
+                <select
+                  value={addItemCategory}
+                  onChange={(e) => setAddItemCategory(e.target.value)}
+                  className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-3 focus:border-emerald-500 outline-none font-medium"
+                >
+                  {categories.map(category => (
+                    <option key={category} value={category}>{category}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button 
+                  onClick={resetAddItemForm}
+                  className="flex-1 py-4 rounded-2xl font-black text-slate-500 bg-slate-100 hover:bg-slate-200 transition-all"
+                  disabled={isItemProcessing}
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={handleAddItem}
+                  className="flex-1 py-4 rounded-2xl font-black text-white bg-emerald-600 hover:bg-emerald-700 shadow-xl shadow-emerald-200 transition-all disabled:opacity-50"
+                  disabled={isItemProcessing}
+                >
+                  {isItemProcessing ? 'Adding...' : 'Add Item'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Edit Item Modal */}
       {editingItem && (
