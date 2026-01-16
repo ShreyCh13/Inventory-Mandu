@@ -311,6 +311,15 @@ const App: React.FC = () => {
     }
   };
 
+  const handleUpdateItem = async (itemId: string, updates: Partial<InventoryItem>) => {
+    const success = await db.updateItem(itemId, updates);
+    if (success) {
+      setItems(prev => prev.map(item =>
+        item.id === itemId ? { ...item, ...updates } : item
+      ));
+    }
+  };
+
   const handleUpdateCategories = async (newCategories: string[]) => {
     // Sync categories with database
     const existingCategories = await db.getCategories();
@@ -495,6 +504,7 @@ const App: React.FC = () => {
             items={items}
             onUpdate={handleUpdateCategories}
             onUpdateItemCategory={updateItemCategory}
+            onUpdateItem={handleUpdateItem}
           />
         )}
       </main>
