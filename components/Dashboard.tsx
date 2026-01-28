@@ -301,11 +301,11 @@ const Dashboard: React.FC<DashboardProps> = ({
                           item.wip > 0 ? 'bg-amber-50/50' : ''
                         }`}
                       >
-                        {/* Item Name - Full Width, Prominent */}
-                        <div className="mb-3">
-                          <h4 className="font-black text-xl text-emerald-700 leading-tight">{item.name}</h4>
-                          <div className="flex flex-wrap items-center gap-2 mt-1 text-sm text-slate-500 font-bold">
-                            <span className="uppercase">{item.unit}</span>
+                        {/* Item Name - Full Width, VERY Prominent */}
+                        <div className="mb-4">
+                          <h4 className="font-black text-2xl text-slate-900 leading-tight bg-gradient-to-r from-emerald-50 to-transparent px-3 py-2 -mx-1 rounded-xl border-l-4 border-emerald-500">{item.name}</h4>
+                          <div className="flex flex-wrap items-center gap-2 mt-2 text-sm text-slate-500 font-bold pl-3">
+                            <span className="uppercase bg-slate-100 px-2 py-0.5 rounded">{item.unit}</span>
                             {item.location && (
                               <span className="text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full text-xs">📍 {item.location}</span>
                             )}

@@ -205,21 +205,21 @@ const ItemManager: React.FC<ItemManagerProps> = ({ items, transactions, stockLev
                           item.wip > 0 ? 'bg-amber-50/50' : ''
                         }`}
                       >
-                        {/* Item Name - Full Width, Prominent */}
-                        <div className="flex items-start justify-between gap-4">
-                          <div className="flex-1">
-                            <h4 className="font-black text-xl text-emerald-700 leading-tight">{item.name}</h4>
-                            <div className="flex flex-wrap items-center gap-2 mt-1 text-sm text-slate-500 font-bold">
-                              <span className="uppercase">{item.unit}</span>
-                              {item.location && (
-                                <span className="text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full text-xs">📍 {item.location}</span>
-                              )}
-                              {item.wip > 0 && (
-                                <span className="text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full text-xs font-black inline-flex items-center gap-1">
-                                  <Timer size={12} /> WIP: {item.wip}
-                                </span>
-                              )}
-                            </div>
+                        {/* Item Name - Full Width, VERY Prominent */}
+                        <div className="mb-3">
+                          <h4 className="font-black text-2xl text-slate-900 leading-tight bg-gradient-to-r from-emerald-50 to-transparent px-3 py-2 -mx-1 rounded-xl border-l-4 border-emerald-500">{item.name}</h4>
+                        </div>
+                        <div className="flex items-center justify-between gap-4">
+                          <div className="flex flex-wrap items-center gap-2 text-sm text-slate-500 font-bold">
+                            <span className="uppercase bg-slate-100 px-2 py-0.5 rounded">{item.unit}</span>
+                            {item.location && (
+                              <span className="text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full text-xs">📍 {item.location}</span>
+                            )}
+                            {item.wip > 0 && (
+                              <span className="text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full text-xs font-black inline-flex items-center gap-1">
+                                <Timer size={12} /> WIP: {item.wip}
+                              </span>
+                            )}
                           </div>
 
                           {/* Stock Display */}
