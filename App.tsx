@@ -22,43 +22,7 @@ export const DEFAULT_CATEGORIES = [
   "Kitchen", "Lift", "Civil (fawda, tasla etc)", "Miscellaneous"
 ];
 
-const ZOOM_LEVELS = [0.8, 0.9, 1, 1.1, 1.25, 1.5];
-const DEFAULT_ZOOM_INDEX = 2; // 100%
-
 const App: React.FC = () => {
-  // Zoom state - persisted to localStorage
-  const [zoomIndex, setZoomIndex] = useState<number>(() => {
-    const saved = localStorage.getItem('qs_zoom_level');
-    if (saved) {
-      const idx = parseInt(saved, 10);
-      if (idx >= 0 && idx < ZOOM_LEVELS.length) return idx;
-    }
-    return DEFAULT_ZOOM_INDEX;
-  });
-
-  const zoomLevel = ZOOM_LEVELS[zoomIndex];
-
-  const handleZoomIn = () => {
-    if (zoomIndex < ZOOM_LEVELS.length - 1) {
-      const newIndex = zoomIndex + 1;
-      setZoomIndex(newIndex);
-      localStorage.setItem('qs_zoom_level', String(newIndex));
-    }
-  };
-
-  const handleZoomOut = () => {
-    if (zoomIndex > 0) {
-      const newIndex = zoomIndex - 1;
-      setZoomIndex(newIndex);
-      localStorage.setItem('qs_zoom_level', String(newIndex));
-    }
-  };
-
-  const handleZoomReset = () => {
-    setZoomIndex(DEFAULT_ZOOM_INDEX);
-    localStorage.setItem('qs_zoom_level', String(DEFAULT_ZOOM_INDEX));
-  };
-
   // Authentication state
   const [session, setSession] = useState<AuthSession | null>(() => {
     const saved = localStorage.getItem('qs_session');
@@ -813,7 +777,7 @@ const App: React.FC = () => {
         </>
       )}
 
-      <main className="max-w-5xl mx-auto p-4 sm:p-6 md:p-12" style={{ zoom: zoomLevel }}>
+      <main className="max-w-5xl mx-auto p-4 sm:p-6 md:p-12">
         {/* Session Expiry Warning Banner */}
         {showSessionWarning && (
           <div className="mb-6 p-4 bg-amber-50 border-2 border-amber-200 rounded-2xl flex items-center justify-between gap-4">
@@ -1006,32 +970,6 @@ const App: React.FC = () => {
         onClose={() => setShowConflictDialog(false)}
       />
 
-      {/* Floating Zoom Controls */}
-      <div className="fixed bottom-24 right-4 md:bottom-4 md:right-4 z-[80] flex flex-col items-center gap-1 bg-white rounded-2xl shadow-xl border border-slate-200 p-2">
-        <button
-          onClick={handleZoomIn}
-          disabled={zoomIndex >= ZOOM_LEVELS.length - 1}
-          className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-100 hover:bg-indigo-100 text-slate-700 hover:text-indigo-700 font-black text-xl disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-          title="Zoom In"
-        >
-          +
-        </button>
-        <button
-          onClick={handleZoomReset}
-          className="w-10 h-8 flex items-center justify-center text-[10px] font-black text-slate-500 hover:text-indigo-600 transition-colors"
-          title="Reset Zoom"
-        >
-          {Math.round(zoomLevel * 100)}%
-        </button>
-        <button
-          onClick={handleZoomOut}
-          disabled={zoomIndex <= 0}
-          className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-100 hover:bg-indigo-100 text-slate-700 hover:text-indigo-700 font-black text-xl disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-          title="Zoom Out"
-        >
-          −
-        </button>
-      </div>
     </div>
   );
 };
