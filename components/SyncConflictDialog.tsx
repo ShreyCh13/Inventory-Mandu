@@ -105,11 +105,18 @@ const SyncConflictDialog: React.FC<SyncConflictDialogProps> = ({
                   <p className="text-[10px] text-slate-400">
                     Attempted {formatDate(op.createdAt)}
                   </p>
-                  {op.payload && (op.payload as Record<string, unknown>).name && (
-                    <p className="text-xs text-slate-600 mt-1 truncate">
-                      "{String((op.payload as Record<string, unknown>).name)}"
-                    </p>
-                  )}
+                  {(() => {
+                    const payload = op.payload as Record<string, unknown> | undefined;
+                    const name = payload?.name;
+                    if (name && typeof name === 'string') {
+                      return (
+                        <p className="text-xs text-slate-600 mt-1 truncate">
+                          "{name}"
+                        </p>
+                      );
+                    }
+                    return null;
+                  })()}
                 </div>
                 <div className="flex gap-2 shrink-0">
                   <button
