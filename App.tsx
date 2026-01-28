@@ -6,12 +6,9 @@ import Dashboard from './components/Dashboard';
 import TransactionForm from './components/TransactionForm';
 import ItemManager from './components/ItemManager';
 import HistoryLog from './components/HistoryLog';
-import SyncSettings from './components/SyncSettings';
 import LoginPage from './components/LoginPage';
-import UserManager from './components/UserManager';
-import CategoryManager from './components/CategoryManager';
-import ContractorManager from './components/ContractorManager';
-import { Plus, Minus, Package, History, LayoutDashboard, Cloud, Settings, User as UserIcon, LogOut, Users, Folder, HardHat } from './components/Icons';
+import AdminPanel from './components/AdminPanel';
+import { Plus, Minus, Package, History, LayoutDashboard, Settings, User as UserIcon, LogOut } from './components/Icons';
 
 // Default categories - will be loaded from database
 export const DEFAULT_CATEGORIES = [
@@ -59,9 +56,8 @@ const App: React.FC = () => {
   const [pendingSummary, setPendingSummary] = useState({ pending: 0, conflicts: 0 });
   const [isDataGuarded, setIsDataGuarded] = useState(false);
   
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'items' | 'history' | 'users' | 'categories' | 'contractors'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'items' | 'history' | 'admin'>('dashboard');
   const [showTransactionModal, setShowTransactionModal] = useState<{type: TransactionType, item?: InventoryItem} | null>(null);
-  const [showSyncSettings, setShowSyncSettings] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
 
@@ -454,37 +450,24 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 pb-28 md:pb-0 md:pl-24">
-      <nav className="fixed bottom-0 left-0 right-0 h-20 bg-white border-t border-slate-200 flex items-center justify-around z-50 md:top-0 md:left-0 md:h-full md:w-24 md:flex-col md:justify-start md:pt-10 md:border-r md:border-t-0 shadow-2xl md:shadow-none">
-        <button onClick={() => setActiveTab('dashboard')} className={`p-4 rounded-2xl transition-all ${activeTab === 'dashboard' ? 'bg-indigo-600 text-white shadow-xl scale-110' : 'text-slate-400 hover:bg-slate-100'}`}>
+      <nav className="fixed bottom-0 left-0 right-0 h-20 bg-white border-t border-slate-200 flex items-center z-50 overflow-x-auto no-scrollbar md:top-0 md:left-0 md:h-full md:w-24 md:flex-col md:justify-start md:pt-10 md:border-r md:border-t-0 shadow-2xl md:shadow-none px-4 sm:px-6 md:px-0 gap-2 md:gap-0">
+        <button onClick={() => setActiveTab('dashboard')} className={`p-4 rounded-2xl transition-all shrink-0 ${activeTab === 'dashboard' ? 'bg-indigo-600 text-white shadow-xl scale-110' : 'text-slate-400 hover:bg-slate-100'}`}>
           <LayoutDashboard size={28} />
         </button>
-        <button onClick={() => setActiveTab('items')} className={`p-4 rounded-2xl transition-all md:mt-6 ${activeTab === 'items' ? 'bg-indigo-600 text-white shadow-xl scale-110' : 'text-slate-400 hover:bg-slate-100'}`}>
+        <button onClick={() => setActiveTab('items')} className={`p-4 rounded-2xl transition-all shrink-0 md:mt-6 ${activeTab === 'items' ? 'bg-indigo-600 text-white shadow-xl scale-110' : 'text-slate-400 hover:bg-slate-100'}`}>
           <Package size={28} />
         </button>
-        <button onClick={() => setActiveTab('history')} className={`p-4 rounded-2xl transition-all md:mt-6 ${activeTab === 'history' ? 'bg-indigo-600 text-white shadow-xl scale-110' : 'text-slate-400 hover:bg-slate-100'}`}>
+        <button onClick={() => setActiveTab('history')} className={`p-4 rounded-2xl transition-all shrink-0 md:mt-6 ${activeTab === 'history' ? 'bg-indigo-600 text-white shadow-xl scale-110' : 'text-slate-400 hover:bg-slate-100'}`}>
           <History size={28} />
         </button>
-        {/* Admin-only Tabs */}
+        {/* Admin-only Tab */}
         {session.user.role === 'admin' && (
-          <>
-            <button onClick={() => setActiveTab('users')} className={`p-4 rounded-2xl transition-all md:mt-6 ${activeTab === 'users' ? 'bg-purple-600 text-white shadow-xl scale-110' : 'text-slate-400 hover:bg-slate-100'}`}>
-              <Users size={28} />
-            </button>
-            <button onClick={() => setActiveTab('categories')} className={`p-4 rounded-2xl transition-all md:mt-2 ${activeTab === 'categories' ? 'bg-purple-600 text-white shadow-xl scale-110' : 'text-slate-400 hover:bg-slate-100'}`}>
-              <Folder size={28} />
-            </button>
-            <button onClick={() => setActiveTab('contractors')} className={`p-4 rounded-2xl transition-all md:mt-2 ${activeTab === 'contractors' ? 'bg-purple-600 text-white shadow-xl scale-110' : 'text-slate-400 hover:bg-slate-100'}`}>
-              <HardHat size={28} />
-            </button>
-          </>
-        )}
-        {session.user.role === 'admin' && (
-          <button onClick={() => setShowSyncSettings(true)} className="p-4 rounded-2xl text-slate-400 hover:bg-slate-100 md:mt-auto relative">
+          <button onClick={() => setActiveTab('admin')} className={`p-4 rounded-2xl transition-all shrink-0 md:mt-6 ${activeTab === 'admin' ? 'bg-purple-600 text-white shadow-xl scale-110' : 'text-slate-400 hover:bg-slate-100'}`}>
             <Settings size={28} />
           </button>
         )}
         {/* User Menu */}
-        <div className="relative md:mb-6">
+        <div className="relative md:mb-6 shrink-0">
           <button 
             onClick={() => setShowUserMenu(!showUserMenu)} 
             className="p-4 rounded-2xl text-slate-400 hover:bg-slate-100 transition-all"
@@ -492,7 +475,7 @@ const App: React.FC = () => {
             <UserIcon size={28} />
           </button>
           {showUserMenu && (
-            <div className="absolute bottom-full left-0 mb-2 md:left-full md:bottom-0 md:top-auto md:mb-0 md:ml-2 bg-white rounded-2xl shadow-2xl border border-slate-200 p-4 min-w-[200px] z-[100]">
+            <div className="absolute bottom-full right-0 mb-2 md:left-full md:bottom-0 md:top-auto md:mb-0 md:ml-2 bg-white rounded-2xl shadow-2xl border border-slate-200 p-4 min-w-[200px] z-[100]">
               <div className="pb-3 mb-3 border-b border-slate-100">
                 <p className="font-bold text-slate-900">{session.user.displayName}</p>
                 <p className="text-xs text-slate-500">@{session.user.username}</p>
@@ -546,9 +529,7 @@ const App: React.FC = () => {
               {activeTab === 'dashboard' && 'Folders'}
               {activeTab === 'items' && 'Catalog'}
               {activeTab === 'history' && 'Logs'}
-              {activeTab === 'users' && 'Users'}
-              {activeTab === 'categories' && 'Categories'}
-              {activeTab === 'contractors' && 'Contractors'}
+              {activeTab === 'admin' && 'Admin'}
             </h1>
           </div>
           <div className="flex gap-3">
@@ -596,28 +577,23 @@ const App: React.FC = () => {
             onDeleteTransaction={handleDeleteTransaction} 
           />
         )}
-        {activeTab === 'users' && session.user.role === 'admin' && (
-          <UserManager currentUserId={session.user.id} />
-        )}
-        {activeTab === 'categories' && session.user.role === 'admin' && (
-          <CategoryManager 
-            categories={categories} 
+        {activeTab === 'admin' && session.user.role === 'admin' && (
+          <AdminPanel
+            session={session}
             items={items}
-            onUpdate={handleUpdateCategories}
+            transactions={transactions}
+            categories={categories}
+            contractors={contractors}
+            users={users}
+            onUpdateCategories={handleUpdateCategories}
             onUpdateItemCategory={updateItemCategory}
             onUpdateItem={handleUpdateItem}
             onCreateItem={handleCreateItem}
             onDeleteItem={handleDeleteItem}
-          />
-        )}
-        {activeTab === 'contractors' && session.user.role === 'admin' && (
-          <ContractorManager 
-            contractors={contractors} 
-            transactions={transactions}
-            items={items}
-            onCreate={db.createContractor}
-            onUpdate={db.updateContractor}
-            onDelete={db.deleteContractor}
+            onRefreshContractors={async () => {
+              const fresh = await db.getContractors();
+              setContractors(fresh);
+            }}
           />
         )}
       </main>
@@ -638,13 +614,6 @@ const App: React.FC = () => {
             const fresh = await db.getContractors();
             setContractors(fresh);
           }}
-        />
-      )}
-
-      {showSyncSettings && (
-        <SyncSettings 
-          onClose={() => setShowSyncSettings(false)}
-          session={session}
         />
       )}
     </div>

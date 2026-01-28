@@ -8,165 +8,289 @@ interface ItemManagerProps {
   transactions: Transaction[];
 }
 
+const ITEMS_PER_PAGE = 100;
+
 const ItemManager: React.FC<ItemManagerProps> = ({ items, transactions }) => {
-  const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [currentPage, setCurrentPage] = useState(0);
+  const [sortBy, setSortBy] = useState<'name' | 'stock' | 'wip'>('name');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
 
   // Get the most recent location for an item
   const getLastLocation = (itemId: string) => {
     const itemTx = transactions
       .filter(t => t.itemId === itemId && t.location)
       .sort((a, b) => b.timestamp - a.timestamp);
-    return itemTx.length > 0 ? itemTx[0].location : '—';
+    return itemTx.length > 0 ? itemTx[0].location : null;
   };
 
-  // Filter items based on search
-  const filteredItems = useMemo(() => {
-    if (!searchQuery) return items;
-    const query = searchQuery.toLowerCase();
-    return items.filter(item => 
-      item.name.toLowerCase().includes(query) ||
-      item.category.toLowerCase().includes(query)
-    );
-  }, [items, searchQuery]);
+  // Calculate item stats
+  const itemStats = useMemo(() => {
+    return items.map(item => ({
+      ...item,
+      stock: calculateStock(transactions, item.id),
+      wip: calculateWIP(transactions, item.id),
+      location: getLastLocation(item.id)
+    }));
+  }, [items, transactions]);
 
-  // Group items by category
-  const groupedItems = useMemo(() => {
-    const groups: Record<string, InventoryItem[]> = {};
-    filteredItems.forEach(item => {
-      if (!groups[item.category]) groups[item.category] = [];
-      groups[item.category].push(item);
+  // Group by category for sidebar
+  const categoryStats = useMemo(() => {
+    const stats: Record<string, { count: number; lowStock: number }> = {};
+    itemStats.forEach(item => {
+      if (!stats[item.category]) stats[item.category] = { count: 0, lowStock: 0 };
+      stats[item.category].count++;
+      if (item.stock <= item.minStock) stats[item.category].lowStock++;
     });
-    return groups;
-  }, [filteredItems]);
+    return stats;
+  }, [itemStats]);
 
-  const categories = Object.keys(groupedItems).sort();
+  const sortedCategories = Object.keys(categoryStats).sort();
 
-  // Summary stats
+  // Filter items
+  const filteredItems = useMemo(() => {
+    let result = itemStats;
+    
+    if (selectedCategory) {
+      result = result.filter(item => item.category === selectedCategory);
+    }
+    
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter(item => 
+        item.name.toLowerCase().includes(q) ||
+        item.category.toLowerCase().includes(q)
+      );
+    }
+
+    // Sort
+    result = [...result].sort((a, b) => {
+      let cmp = 0;
+      if (sortBy === 'name') cmp = a.name.localeCompare(b.name);
+      else if (sortBy === 'stock') cmp = a.stock - b.stock;
+      else if (sortBy === 'wip') cmp = a.wip - b.wip;
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+
+    return result;
+  }, [itemStats, selectedCategory, searchQuery, sortBy, sortDir]);
+
+  // Paginate
+  const totalPages = Math.ceil(filteredItems.length / ITEMS_PER_PAGE);
+  const paginatedItems = filteredItems.slice(
+    currentPage * ITEMS_PER_PAGE,
+    (currentPage + 1) * ITEMS_PER_PAGE
+  );
+
+  const handleSort = (field: 'name' | 'stock' | 'wip') => {
+    if (sortBy === field) {
+      setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortBy(field);
+      setSortDir('asc');
+    }
+  };
+
+  const handleCategorySelect = (cat: string | null) => {
+    setSelectedCategory(cat);
+    setCurrentPage(0);
+  };
+
+  const handleSearch = (value: string) => {
+    setSearchQuery(value);
+    setCurrentPage(0);
+  };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Search Bar */}
       <div className="relative">
         <input
           type="text"
-          placeholder="Search items or categories..."
+          placeholder="Search items..."
           value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full pl-12 pr-6 py-4 bg-white border-2 border-slate-100 rounded-2xl focus:border-indigo-500 outline-none text-lg font-medium placeholder:text-slate-300"
+          onChange={(e) => handleSearch(e.target.value)}
+          className="w-full pl-10 pr-4 py-3 bg-white border-2 border-slate-100 rounded-xl focus:border-indigo-500 outline-none text-sm font-bold placeholder:text-slate-300"
         />
-        <svg className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+        <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+        {searchQuery && (
+          <button onClick={() => handleSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
+          </button>
+        )}
       </div>
 
-      {categories.length > 0 ? (
-        categories.map(category => (
-          <div key={category} className="bg-white rounded-[32px] border-2 border-slate-100 overflow-hidden shadow-sm">
-            {/* Category Header */}
-            <button
-              onClick={() => setExpandedCategory(expandedCategory === category ? null : category)}
-              className="w-full flex items-center justify-between p-6 hover:bg-slate-50/50 transition-colors"
+      {/* Category Pills */}
+      <div className="flex gap-2 overflow-x-auto no-scrollbar pb-2 -mx-4 px-4">
+        <button
+          onClick={() => handleCategorySelect(null)}
+          className={`shrink-0 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${
+            !selectedCategory 
+              ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200' 
+              : 'bg-white text-slate-500 border border-slate-200'
+          }`}
+        >
+          All ({items.length})
+        </button>
+        {sortedCategories.map(cat => (
+          <button
+            key={cat}
+            onClick={() => handleCategorySelect(cat)}
+            className={`shrink-0 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center gap-2 ${
+              selectedCategory === cat 
+                ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200' 
+                : 'bg-white text-slate-500 border border-slate-200'
+            }`}
+          >
+            {cat}
+            <span className={`${selectedCategory === cat ? 'bg-white/20' : 'bg-slate-100'} px-1.5 py-0.5 rounded text-[10px]`}>
+              {categoryStats[cat]?.count}
+            </span>
+            {categoryStats[cat]?.lowStock > 0 && (
+              <span className="w-2 h-2 bg-red-500 rounded-full"></span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {/* Stats Bar */}
+      <div className="flex items-center justify-between text-xs">
+        <p className="text-slate-400 font-bold">
+          {filteredItems.length} items {selectedCategory && `in ${selectedCategory}`}
+        </p>
+        {totalPages > 1 && (
+          <p className="text-slate-400 font-bold">Page {currentPage + 1} / {totalPages}</p>
+        )}
+      </div>
+
+      {/* Items Table */}
+      {filteredItems.length > 0 ? (
+        <div className="bg-white rounded-xl border border-slate-100 overflow-hidden">
+          {/* Table Header */}
+          <div className="grid grid-cols-12 gap-2 px-4 py-3 bg-slate-50 border-b border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+            <button 
+              onClick={() => handleSort('name')} 
+              className="col-span-5 text-left flex items-center gap-1 hover:text-slate-600"
             >
-              <div className="flex items-center gap-4">
-                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${
-                  expandedCategory === category ? 'bg-indigo-600 text-white' : 'bg-indigo-50 text-indigo-600'
-                }`}>
-                  <Package size={24} />
-                </div>
-                <div className="text-left">
-                  <h3 className="font-black text-xl text-slate-900 uppercase tracking-tight">{category}</h3>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                    {groupedItems[category].length} ITEMS
+              Item {sortBy === 'name' && (sortDir === 'asc' ? '↑' : '↓')}
+            </button>
+            <button 
+              onClick={() => handleSort('stock')} 
+              className="col-span-2 text-center flex items-center justify-center gap-1 hover:text-slate-600"
+            >
+              Stock {sortBy === 'stock' && (sortDir === 'asc' ? '↑' : '↓')}
+            </button>
+            <button 
+              onClick={() => handleSort('wip')} 
+              className="col-span-2 text-center flex items-center justify-center gap-1 hover:text-amber-600 text-amber-500"
+            >
+              WIP {sortBy === 'wip' && (sortDir === 'asc' ? '↑' : '↓')}
+            </button>
+            <div className="col-span-3 text-left">Location</div>
+          </div>
+
+          {/* Table Body */}
+          <div className="divide-y divide-slate-50 max-h-[65vh] overflow-y-auto">
+            {paginatedItems.map(item => (
+              <div 
+                key={item.id} 
+                className={`grid grid-cols-12 gap-2 px-4 py-3 items-center hover:bg-slate-50 transition-colors ${
+                  item.wip > 0 ? 'bg-amber-50/50' : ''
+                }`}
+              >
+                {/* Item Name */}
+                <div className="col-span-5 min-w-0">
+                  <p className="font-bold text-sm text-slate-900 truncate">{item.name}</p>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase">
+                    {item.category} • {item.unit}
                   </p>
                 </div>
-              </div>
-              <div className={`w-10 h-10 rounded-full flex items-center justify-center transition-transform ${
-                expandedCategory === category ? 'rotate-180 bg-indigo-100' : 'bg-slate-100'
-              }`}>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="m6 9 6 6 6-6"/>
-                </svg>
-              </div>
-            </button>
 
-            {/* Items Table */}
-            {expandedCategory === category && (
-              <div className="border-t-2 border-slate-100 animate-in fade-in slide-in-from-top-2 duration-200">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse">
-                    <thead className="bg-slate-50/80">
-                      <tr>
-                        <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Item Name</th>
-                        <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Stock</th>
-                        <th className="px-6 py-4 text-[10px] font-black text-amber-500 uppercase tracking-widest text-center">WIP</th>
-                        <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Last Location</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {groupedItems[category].map(item => {
-                        const currentStock = calculateStock(transactions, item.id);
-                        const wipQty = calculateWIP(transactions, item.id);
-                        const location = getLastLocation(item.id);
-                        const hasWIP = wipQty > 0;
-                        return (
-                          <tr key={item.id} className={`group transition-colors ${
-                            hasWIP ? 'bg-amber-50 hover:bg-amber-100/70' : 'hover:bg-slate-50/50'
-                          }`}>
-                            <td className="px-6 py-5">
-                              <div className="font-bold text-slate-900 text-lg leading-tight">{item.name}</div>
-                              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter mt-0.5">
-                                {item.unit}
-                              </div>
-                            </td>
-                            <td className="px-6 py-5 text-center">
-                              <span className={`inline-block text-2xl font-black tabular-nums ${
-                                currentStock <= 0 ? 'text-red-500' : currentStock <= item.minStock ? 'text-orange-500' : 'text-emerald-600'
-                              }`}>
-                                {currentStock}
-                              </span>
-                            </td>
-                            <td className="px-6 py-5 text-center">
-                              {hasWIP ? (
-                                <span className="inline-flex items-center gap-1 px-3 py-1.5 bg-amber-200 text-amber-700 rounded-full text-lg font-black tabular-nums">
-                                  <Timer size={14} />
-                                  {wipQty}
-                                </span>
-                              ) : (
-                                <span className="text-slate-300">—</span>
-                              )}
-                            </td>
-                            <td className="px-6 py-5">
-                              <span className="text-sm font-medium text-slate-600">{location}</span>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                {/* Stock */}
+                <div className="col-span-2 text-center">
+                  <span className={`text-lg font-black tabular-nums ${
+                    item.stock <= 0 ? 'text-red-500' : 
+                    item.stock <= item.minStock ? 'text-amber-500' : 
+                    'text-emerald-600'
+                  }`}>
+                    {item.stock}
+                  </span>
+                </div>
+
+                {/* WIP */}
+                <div className="col-span-2 text-center">
+                  {item.wip > 0 ? (
+                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-amber-100 text-amber-700 rounded-full text-sm font-black tabular-nums">
+                      <Timer size={12} />
+                      {item.wip}
+                    </span>
+                  ) : (
+                    <span className="text-slate-300 text-sm">—</span>
+                  )}
+                </div>
+
+                {/* Location */}
+                <div className="col-span-3 min-w-0">
+                  {item.location ? (
+                    <span className="text-xs text-slate-600 font-medium truncate block">{item.location}</span>
+                  ) : (
+                    <span className="text-slate-300 text-xs">—</span>
+                  )}
                 </div>
               </div>
-            )}
+            ))}
           </div>
-        ))
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-center gap-2 p-3 bg-slate-50 border-t border-slate-100">
+              <button
+                onClick={() => setCurrentPage(Math.max(0, currentPage - 1))}
+                disabled={currentPage === 0}
+                className="px-4 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-600 disabled:opacity-50"
+              >
+                Previous
+              </button>
+              <span className="text-xs font-bold text-slate-500 px-4">
+                {currentPage + 1} / {totalPages}
+              </span>
+              <button
+                onClick={() => setCurrentPage(Math.min(totalPages - 1, currentPage + 1))}
+                disabled={currentPage >= totalPages - 1}
+                className="px-4 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-600 disabled:opacity-50"
+              >
+                Next
+              </button>
+            </div>
+          )}
+        </div>
       ) : (
-        <div className="py-24 text-center bg-white rounded-[40px] border-4 border-dashed border-slate-100">
-          <div className="bg-slate-50 w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-6 text-slate-200">
-            <Package size={48} />
-          </div>
-          <h3 className="text-3xl font-black text-slate-900 mb-2">
-            {searchQuery ? 'No Items Found' : 'No Items Yet'}
+        <div className="py-16 text-center bg-white rounded-2xl border-2 border-dashed border-slate-100">
+          <Package size={32} className="mx-auto text-slate-200 mb-2" />
+          <h3 className="text-lg font-black text-slate-900 mb-1">
+            {searchQuery ? 'No matches' : 'No Items'}
           </h3>
-          <p className="text-slate-400 text-lg font-medium italic">
-            {searchQuery ? 'Try a different search term' : 'Use "Receive Stock" on the Dashboard to add items.'}
+          <p className="text-slate-400 text-sm">
+            {searchQuery ? 'Try different terms' : 'Add items via Dashboard'}
           </p>
         </div>
       )}
-      
-      <div className="bg-amber-50 border-2 border-amber-100 p-6 rounded-3xl text-amber-800">
-        <p className="text-sm font-bold leading-relaxed">
-          <span className="font-black underline">Note:</span> To add new items, use the 
-          <span className="font-black"> "Receive Stock"</span> button on the main Dashboard. 
-          This keeps your records and catalog updated at the same time.
-        </p>
+
+      {/* Legend */}
+      <div className="flex flex-wrap items-center gap-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+        <div className="flex items-center gap-1.5">
+          <span className="w-3 h-3 bg-emerald-500 rounded-full"></span> In Stock
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="w-3 h-3 bg-amber-500 rounded-full"></span> Low Stock
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="w-3 h-3 bg-red-500 rounded-full"></span> Out of Stock
+        </div>
+        <div className="flex items-center gap-1.5">
+          <Timer size={12} className="text-amber-600" /> Work in Progress
+        </div>
       </div>
     </div>
   );
