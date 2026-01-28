@@ -395,13 +395,6 @@ const App: React.FC = () => {
     refreshPendingSummary();
   };
 
-  const handleSaveSettings = async (newSettings: AppSettings) => {
-    await db.saveSettings(newSettings);
-    setSettings(newSettings);
-    setShowSyncSettings(false);
-    refreshPendingSummary();
-  };
-
   const acknowledgeDataGuard = () => {
     localStorage.setItem('qs_guard_override', 'true');
     setIsDataGuarded(false);
