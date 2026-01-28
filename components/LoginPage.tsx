@@ -31,12 +31,19 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isInitializing, setIsInitializing] = useState(true);
+  const [guardBlocked, setGuardBlocked] = useState(false);
 
   // Initialize default users if none exist
   useEffect(() => {
     const initUsers = async () => {
       const users = await db.getUsers();
       if (users.length === 0) {
+        const guardOverride = localStorage.getItem('qs_guard_override') === 'true';
+        if (isSupabaseConfigured() && db.hasCachedCloudData() && !guardOverride) {
+          setGuardBlocked(true);
+          setIsInitializing(false);
+          return;
+        }
         // Seed default users
         for (const user of DEFAULT_USERS) {
           await db.createUser(user);
@@ -130,6 +137,26 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
 
         {/* Login Form */}
         <form onSubmit={handleSubmit} className="bg-white/10 backdrop-blur-xl rounded-3xl p-8 shadow-2xl border border-white/10">
+          {guardBlocked && (
+            <div className="mb-6 p-4 bg-amber-500/20 border border-amber-500/30 rounded-2xl flex flex-col gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-2 h-2 bg-amber-400 rounded-full animate-pulse"></div>
+                <p className="text-amber-200 text-sm font-medium">
+                  Data safety check blocked automatic setup. Verify your cloud database or continue to unlock setup.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  localStorage.setItem('qs_guard_override', 'true');
+                  window.location.reload();
+                }}
+                className="w-full bg-amber-500/30 text-amber-100 py-3 rounded-xl font-bold text-xs uppercase tracking-wider hover:bg-amber-500/40 transition-all"
+              >
+                Continue Anyway
+              </button>
+            </div>
+          )}
           {error && (
             <div className="mb-6 p-4 bg-red-500/20 border border-red-500/30 rounded-2xl flex items-center gap-3">
               <div className="w-2 h-2 bg-red-400 rounded-full animate-pulse"></div>

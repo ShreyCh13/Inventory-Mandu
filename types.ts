@@ -2,6 +2,7 @@
 export type { 
   User, 
   Category,
+  Contractor,
   InventoryItem, 
   Transaction, 
   AuthSession, 

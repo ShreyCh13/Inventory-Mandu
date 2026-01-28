@@ -7,6 +7,7 @@ interface DashboardProps {
   transactions: Transaction[];
   session: AuthSession;
   categories: string[];
+  contractors: Contractor[];
   users: User[];
   stockLevels: Record<string, { stock: number; wip: number }>;
   onAction: (type: TransactionType, item: InventoryItem) => void;
@@ -20,6 +21,7 @@ const Dashboard: React.FC<DashboardProps> = ({
   transactions, 
   session, 
   categories,
+  contractors,
   users,
   stockLevels,
   onAction, 
@@ -36,18 +38,19 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [editLocation, setEditLocation] = useState('');
   const [editAmount, setEditAmount] = useState('');
   const [editBillNumber, setEditBillNumber] = useState('');
+  const [editContractorId, setEditContractorId] = useState('');
 
   const getUserName = (userId: string) => {
     const user = users.find(u => u.id === userId);
     return user?.displayName || 'Unknown User';
   };
 
+  const getContractor = (id?: string) => contractors.find(c => c.id === id);
+
   // Check if current user can edit this transaction
   const canEdit = (tx: Transaction) => {
-    // Admins can edit everything
-    if (session.user.role === 'admin') return true;
-    // Users can only edit their own transactions
-    return tx.createdBy === session.user.id;
+    // Only admins can edit
+    return session.user.role === 'admin';
   };
 
   const openEditModal = (tx: Transaction) => {
@@ -55,6 +58,7 @@ const Dashboard: React.FC<DashboardProps> = ({
     setEditLocation(tx.location || '');
     setEditAmount(tx.amount?.toString() || '');
     setEditBillNumber(tx.billNumber || '');
+    setEditContractorId(tx.contractorId || '');
   };
 
   const saveEdit = () => {
@@ -62,7 +66,8 @@ const Dashboard: React.FC<DashboardProps> = ({
       onUpdateTransaction(editingTx.id, {
         location: editLocation || undefined,
         amount: editAmount ? parseFloat(editAmount) : undefined,
-        billNumber: editBillNumber || undefined
+        billNumber: editBillNumber || undefined,
+        contractorId: editContractorId || undefined
       });
     }
     setEditingTx(null);
@@ -299,6 +304,11 @@ const Dashboard: React.FC<DashboardProps> = ({
                           </td>
                           <td className="py-4 px-4 border-r border-slate-100">
                             <div className="flex flex-wrap gap-1">
+                              {tx.contractorId && (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded">
+                                  👷 {getContractor(tx.contractorId)?.name || 'Unknown'}
+                                </span>
+                              )}
                               {tx.location && (
                                 <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-blue-600 bg-blue-50 px-2 py-1 rounded">
                                   📍 {tx.location}
@@ -424,39 +434,59 @@ const Dashboard: React.FC<DashboardProps> = ({
             <div className="p-6 space-y-5">
               <div>
                 <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
-                  Location <span className="text-slate-300">(Optional)</span>
+                  Contractor <span className="text-slate-300">(Optional)</span>
                 </label>
-                <input 
-                  type="text" placeholder="e.g. Site A, Block 2"
-                  className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-4 focus:border-indigo-500 outline-none font-medium text-base"
-                  value={editLocation}
-                  onChange={(e) => setEditLocation(e.target.value)}
-                />
+                <select
+                  value={editContractorId}
+                  onChange={(e) => setEditContractorId(e.target.value)}
+                  className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-3 focus:border-indigo-500 outline-none font-medium"
+                >
+                  <option value="">No Contractor</option>
+                  {contractors.map(c => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
               </div>
 
-              <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
-                  Amount ₹ <span className="text-slate-300">(Optional)</span>
-                </label>
-                <input 
-                  type="number" step="0.01" placeholder="0.00"
-                  className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-4 focus:border-indigo-500 outline-none font-bold text-lg tabular-nums"
-                  value={editAmount}
-                  onChange={(e) => setEditAmount(e.target.value)}
-                />
-              </div>
+              {editingTx.type !== 'OUT' && (
+                <>
+                  <div>
+                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
+                      Location <span className="text-slate-300">(Optional)</span>
+                    </label>
+                    <input 
+                      type="text" placeholder="e.g. Site A, Block 2"
+                      className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-4 focus:border-indigo-500 outline-none font-medium text-base"
+                      value={editLocation}
+                      onChange={(e) => setEditLocation(e.target.value)}
+                    />
+                  </div>
 
-              <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
-                  Bill / Invoice No. <span className="text-slate-300">(Optional)</span>
-                </label>
-                <input 
-                  type="text" placeholder="e.g. INV-2024-001"
-                  className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-4 focus:border-indigo-500 outline-none font-medium text-base"
-                  value={editBillNumber}
-                  onChange={(e) => setEditBillNumber(e.target.value)}
-                />
-              </div>
+                  <div>
+                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
+                      Amount ₹ <span className="text-slate-300">(Optional)</span>
+                    </label>
+                    <input 
+                      type="number" step="0.01" placeholder="0.00"
+                      className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-4 focus:border-indigo-500 outline-none font-bold text-lg tabular-nums"
+                      value={editAmount}
+                      onChange={(e) => setEditAmount(e.target.value)}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
+                      Bill / Invoice No. <span className="text-slate-300">(Optional)</span>
+                    </label>
+                    <input 
+                      type="text" placeholder="e.g. INV-2024-001"
+                      className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-4 focus:border-indigo-500 outline-none font-medium text-base"
+                      value={editBillNumber}
+                      onChange={(e) => setEditBillNumber(e.target.value)}
+                    />
+                  </div>
+                </>
+              )}
 
               <div className="flex gap-3 pt-2">
                 <button 

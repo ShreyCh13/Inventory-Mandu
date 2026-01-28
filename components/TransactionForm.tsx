@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
-import { InventoryItem, Transaction, TransactionType, AuthSession } from '../types';
-import { ArrowDown, ArrowUp, Timer } from './Icons';
-import { calculateStock } from '../lib/db';
+import { InventoryItem, Transaction, TransactionType, AuthSession, Contractor } from '../types';
+import { ArrowDown, ArrowUp, Timer, HardHat } from './Icons';
+import { calculateStock, createContractor } from '../lib/db';
 
 interface TransactionFormProps {
   type: TransactionType;
@@ -9,10 +9,12 @@ interface TransactionFormProps {
   items: InventoryItem[];
   transactions: Transaction[];
   categories: string[];
+  contractors: Contractor[];
   session: AuthSession;
   stockLevels?: Record<string, { stock: number; wip: number }>;
   onClose: () => void;
   onSubmit: (t: Omit<Transaction, 'id' | 'timestamp'>, newItem?: Omit<InventoryItem, 'id'>) => void;
+  onRefreshContractors?: () => void;
 }
 
 const TransactionForm: React.FC<TransactionFormProps> = ({ 
@@ -21,16 +23,24 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
   items, 
   transactions, 
   categories,
+  contractors,
   stockLevels,
   session, 
   onClose, 
-  onSubmit 
+  onSubmit,
+  onRefreshContractors
 }) => {
   const [isNewItem, setIsNewItem] = useState(false);
   
   // Form State
   const [selectedCategory, setSelectedCategory] = useState(initialItem?.category || '');
   const [selectedItemId, setSelectedItemId] = useState(initialItem?.id || '');
+  
+  // Contractor State
+  const [selectedContractorId, setSelectedContractorId] = useState('');
+  const [isAddingContractor, setIsAddingContractor] = useState(false);
+  const [newContractorName, setNewContractorName] = useState('');
+  const [contractorLoading, setContractorLoading] = useState(false);
   
   // Calculate current stock for selected item
   const selectedItemStock = selectedItemId ? calculateStock(transactions, selectedItemId) : 0;
@@ -84,6 +94,19 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
     'Roll', 'Set', 'Pair', 'Sqft', 'Sqm', 'Cubic M', 'Ton', 'Dozen'
   ];
 
+  const handleCreateContractor = async () => {
+    if (!newContractorName.trim()) return;
+    setContractorLoading(true);
+    const created = await createContractor(newContractorName.trim());
+    if (created) {
+      setSelectedContractorId(created.id);
+      setIsAddingContractor(false);
+      setNewContractorName('');
+      onRefreshContractors?.();
+    }
+    setContractorLoading(false);
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     // Validate: Reason is only required for existing items (OUT/WIP), optional for IN
@@ -104,6 +127,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
         location: location || undefined,
         amount: amount ? parseFloat(amount) : undefined,
         billNumber: billNumber || undefined,
+        contractorId: selectedContractorId || undefined,
         createdBy: session.user.id
       }, {
         name: newItemName,
@@ -125,6 +149,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
         location: location || undefined,
         amount: amount ? parseFloat(amount) : undefined,
         billNumber: billNumber || undefined,
+        contractorId: selectedContractorId || undefined,
         createdBy: session.user.id
       });
     }
@@ -294,6 +319,61 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
             </div>
           )}
 
+          {/* Contractor Field */}
+          <div className="bg-indigo-50/50 p-4 rounded-[24px] border border-indigo-100">
+            <label className="block text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+              <HardHat size={12} />
+              Contractor <span className="text-indigo-300">(Optional)</span>
+            </label>
+            
+            {isAddingContractor ? (
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="Enter contractor name..."
+                  className="flex-1 bg-white border-2 border-indigo-500 rounded-xl px-4 py-2 outline-none font-bold"
+                  value={newContractorName}
+                  onChange={(e) => setNewContractorName(e.target.value)}
+                  autoFocus
+                />
+                <button
+                  type="button"
+                  onClick={handleCreateContractor}
+                  disabled={contractorLoading}
+                  className="bg-indigo-600 text-white px-4 py-2 rounded-xl font-bold hover:bg-indigo-700 disabled:opacity-50"
+                >
+                  {contractorLoading ? '...' : 'Add'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setIsAddingContractor(false); setNewContractorName(''); }}
+                  className="bg-white border-2 border-indigo-100 text-indigo-600 px-4 py-2 rounded-xl font-bold"
+                >
+                  ✕
+                </button>
+              </div>
+            ) : (
+              <select
+                className="w-full bg-white border-2 border-indigo-100 rounded-xl px-4 py-3 focus:border-indigo-500 outline-none font-bold text-slate-700 appearance-none"
+                value={selectedContractorId}
+                onChange={(e) => {
+                  if (e.target.value === 'ADD_NEW') {
+                    setIsAddingContractor(true);
+                  } else {
+                    setSelectedContractorId(e.target.value);
+                  }
+                }}
+              >
+                <option value="">No Contractor assigned</option>
+                {contractors.map(c => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+                <option value="ADD_NEW" className="text-indigo-600 font-bold">+ Add New Contractor...</option>
+              </select>
+            )}
+            <p className="text-[10px] text-indigo-400 mt-2 font-medium">Assign materials to a specific contractor for tracking</p>
+          </div>
+
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Quantity</label>
@@ -318,45 +398,47 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
             </div>
           </div>
 
-          {/* Optional Fields Section */}
-          <div className="pt-2">
-            <p className="text-[10px] font-bold text-slate-300 uppercase tracking-widest mb-3">Optional Details</p>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
+          {/* Optional Fields Section - Hidden for OUT transactions */}
+          {type !== 'OUT' && (
+            <div className="pt-2">
+              <p className="text-[10px] font-bold text-slate-300 uppercase tracking-widest mb-3">Optional Details</p>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
+                    Location <span className="text-slate-300">(Optional)</span>
+                  </label>
+                  <input 
+                    type="text" placeholder="e.g. Site A, Block 2"
+                    className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-4 focus:border-indigo-500 outline-none font-medium text-base"
+                    value={location}
+                    onChange={(e) => setLocation(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
+                    Amount ₹ <span className="text-slate-300">(Optional)</span>
+                  </label>
+                  <input 
+                    type="number" step="0.01" placeholder="0.00"
+                    className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-4 focus:border-indigo-500 outline-none font-bold text-lg tabular-nums"
+                    value={amount}
+                    onChange={(e) => setAmount(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="mt-4">
                 <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
-                  Location <span className="text-slate-300">(Optional)</span>
+                  Bill / Invoice No. <span className="text-slate-300">(Optional)</span>
                 </label>
                 <input 
-                  type="text" placeholder="e.g. Site A, Block 2"
+                  type="text" placeholder="e.g. INV-2024-001"
                   className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-4 focus:border-indigo-500 outline-none font-medium text-base"
-                  value={location}
-                  onChange={(e) => setLocation(e.target.value)}
-                />
-              </div>
-              <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
-                  Amount ₹ <span className="text-slate-300">(Optional)</span>
-                </label>
-                <input 
-                  type="number" step="0.01" placeholder="0.00"
-                  className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-4 focus:border-indigo-500 outline-none font-bold text-lg tabular-nums"
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
+                  value={billNumber}
+                  onChange={(e) => setBillNumber(e.target.value)}
                 />
               </div>
             </div>
-            <div className="mt-4">
-              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
-                Bill / Invoice No. <span className="text-slate-300">(Optional)</span>
-              </label>
-              <input 
-                type="text" placeholder="e.g. INV-2024-001"
-                className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-4 focus:border-indigo-500 outline-none font-medium text-base"
-                value={billNumber}
-                onChange={(e) => setBillNumber(e.target.value)}
-              />
-            </div>
-          </div>
+          )}
 
           {!isNewItem && (
             <div>

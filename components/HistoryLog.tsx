@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Transaction, InventoryItem, AuthSession, User, TransactionType } from '../types';
 import { ArrowDown, ArrowUp, Timer, Download, Plus } from './Icons';
 import * as db from '../lib/db';
@@ -8,6 +8,7 @@ interface HistoryLogProps {
   items: InventoryItem[];
   session: AuthSession;
   categories: string[];
+  contractors: Contractor[];
   users: User[];
   onAddTransaction?: (tx: Transaction) => void;
   onUpdateTransaction?: (id: string, updates: Partial<Transaction>) => void;
@@ -21,34 +22,82 @@ const HistoryLog: React.FC<HistoryLogProps> = ({
   items, 
   session, 
   categories,
+  contractors,
   users,
   onAddTransaction,
   onUpdateTransaction, 
   onDeleteTransaction 
 }) => {
   const getItem = (id: string) => items.find(i => i.id === id);
+  const getContractor = (id?: string) => contractors.find(c => c.id === id);
   const isAdmin = session.user.role === 'admin';
   
   // Pagination state
-  const [displayCount, setDisplayCount] = useState(ITEMS_PER_PAGE);
+  const [transactionsState, setTransactionsState] = useState<Transaction[]>([]);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [totalCount, setTotalCount] = useState(0);
+  const [offset, setOffset] = useState(0);
   
   // Filter state
   const [filterType, setFilterType] = useState<'ALL' | 'IN' | 'OUT' | 'WIP'>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
   const [filterUser, setFilterUser] = useState<string>('ALL');
+  const [filterContractor, setFilterContractor] = useState<string>('ALL');
   const [filterDateFrom, setFilterDateFrom] = useState<string>('');
   const [filterDateTo, setFilterDateTo] = useState<string>('');
   const [showFilters, setShowFilters] = useState(false);
 
-  useEffect(() => {
-    const loadCount = async () => {
-      const count = await db.getTransactionCount();
-      setTotalCount(count);
+  const searchItemIds = useMemo(() => {
+    if (!searchQuery) return [];
+    const q = searchQuery.toLowerCase();
+    return items
+      .filter(item => item.name.toLowerCase().includes(q) || item.category.toLowerCase().includes(q))
+      .map(item => item.id);
+  }, [items, searchQuery]);
+
+  const buildQuery = useCallback((limit?: number, queryOffset?: number) => {
+    const fromDate = filterDateFrom ? new Date(filterDateFrom) : undefined;
+    if (fromDate) fromDate.setHours(0, 0, 0, 0);
+    const toDate = filterDateTo ? new Date(filterDateTo) : undefined;
+    if (toDate) toDate.setHours(23, 59, 59, 999);
+    return {
+      limit,
+      offset: queryOffset,
+      type: filterType === 'ALL' ? undefined : filterType,
+      user: filterUser === 'ALL' ? undefined : filterUser,
+      contractorId: filterContractor === 'ALL' ? undefined : filterContractor,
+      startDate: fromDate,
+      endDate: toDate,
+      search: searchQuery || undefined,
+      searchItemIds
     };
-    loadCount();
-  }, [transactions]);
+  }, [filterType, filterUser, filterContractor, filterDateFrom, filterDateTo, searchQuery, searchItemIds]);
+
+  const loadPage = useCallback(async (reset = false) => {
+    setIsLoading(true);
+    const nextOffset = reset ? 0 : offset;
+    const query = buildQuery(ITEMS_PER_PAGE, nextOffset);
+    const [page, count] = await Promise.all([
+      db.getTransactions(query),
+      db.getTransactionCount(buildQuery(undefined, undefined))
+    ]);
+    setTotalCount(count);
+    setTransactionsState(prev => reset ? page : [...prev, ...page]);
+    setOffset(nextOffset + page.length);
+    setIsLoading(false);
+  }, [buildQuery, offset]);
+
+  useEffect(() => {
+    setOffset(0);
+    loadPage(true);
+  }, [filterType, filterUser, filterContractor, filterDateFrom, filterDateTo, searchQuery, loadPage]);
+
+  useEffect(() => {
+    if (transactions.length > 0) {
+      loadPage(true);
+    }
+  }, [transactions, loadPage]);
 
   const getUserName = (userId: string) => {
     const user = users.find(u => u.id === userId);
@@ -57,8 +106,7 @@ const HistoryLog: React.FC<HistoryLogProps> = ({
 
   // Check if current user can edit this transaction
   const canEdit = (tx: Transaction) => {
-    if (session.user.role === 'admin') return true;
-    return tx.createdBy === session.user.id;
+    return session.user.role === 'admin';
   };
   
   // Edit modal state
@@ -71,6 +119,7 @@ const HistoryLog: React.FC<HistoryLogProps> = ({
   const [editLocation, setEditLocation] = useState('');
   const [editAmount, setEditAmount] = useState('');
   const [editBillNumber, setEditBillNumber] = useState('');
+  const [editContractorId, setEditContractorId] = useState('');
   
   // Add transaction modal state (admin only)
   const [showAddModal, setShowAddModal] = useState(false);
@@ -82,6 +131,7 @@ const HistoryLog: React.FC<HistoryLogProps> = ({
   const [newLocation, setNewLocation] = useState('');
   const [newAmount, setNewAmount] = useState('');
   const [newBillNumber, setNewBillNumber] = useState('');
+  const [newContractorId, setNewContractorId] = useState('');
 
   const openEditModal = (tx: Transaction) => {
     setEditingTx(tx);
@@ -93,6 +143,7 @@ const HistoryLog: React.FC<HistoryLogProps> = ({
     setEditLocation(tx.location || '');
     setEditAmount(tx.amount?.toString() || '');
     setEditBillNumber(tx.billNumber || '');
+    setEditContractorId(tx.contractorId || '');
   };
 
   const saveEdit = () => {
@@ -100,7 +151,8 @@ const HistoryLog: React.FC<HistoryLogProps> = ({
       const updates: Partial<Transaction> = {
         location: editLocation || undefined,
         amount: editAmount ? parseFloat(editAmount) : undefined,
-        billNumber: editBillNumber || undefined
+        billNumber: editBillNumber || undefined,
+        contractorId: editContractorId || undefined
       };
       
       // Admin can edit all fields
@@ -126,6 +178,7 @@ const HistoryLog: React.FC<HistoryLogProps> = ({
     setNewLocation('');
     setNewAmount('');
     setNewBillNumber('');
+    setNewContractorId('');
     setShowAddModal(true);
   };
 
@@ -143,6 +196,7 @@ const HistoryLog: React.FC<HistoryLogProps> = ({
       location: newLocation || undefined,
       amount: newAmount ? parseFloat(newAmount) : undefined,
       billNumber: newBillNumber || undefined,
+      contractorId: newContractorId || undefined,
       createdBy: session.user.id
     };
     
@@ -169,65 +223,30 @@ const HistoryLog: React.FC<HistoryLogProps> = ({
   };
 
   // Get unique users from transactions for filter dropdown
-  const uniqueUsers = Array.from(new Set(transactions.map(tx => tx.user))).sort();
-
-  // Filter transactions
-  const filteredTransactions = transactions.filter(tx => {
-    // Type filter
-    if (filterType !== 'ALL' && tx.type !== filterType) return false;
-    
-    // User filter
-    if (filterUser !== 'ALL' && tx.user !== filterUser) return false;
-    
-    // Date range filter
-    if (filterDateFrom) {
-      const fromDate = new Date(filterDateFrom);
-      fromDate.setHours(0, 0, 0, 0);
-      if (tx.timestamp < fromDate.getTime()) return false;
-    }
-    if (filterDateTo) {
-      const toDate = new Date(filterDateTo);
-      toDate.setHours(23, 59, 59, 999);
-      if (tx.timestamp > toDate.getTime()) return false;
-    }
-    
-    // Search query filter
-    if (searchQuery) {
-      const item = getItem(tx.itemId);
-      const query = searchQuery.toLowerCase();
-      return (
-        item?.name.toLowerCase().includes(query) ||
-        item?.category.toLowerCase().includes(query) ||
-        tx.user.toLowerCase().includes(query) ||
-        tx.reason.toLowerCase().includes(query)
-      );
-    }
-    return true;
-  });
+  const uniqueUsers = Array.from(new Set(transactionsState.map(tx => tx.user))).sort();
 
   // Check if any filters are active
-  const hasActiveFilters = filterType !== 'ALL' || filterUser !== 'ALL' || filterDateFrom || filterDateTo || searchQuery;
+  const hasActiveFilters = filterType !== 'ALL' || filterUser !== 'ALL' || filterContractor !== 'ALL' || filterDateFrom || filterDateTo || searchQuery;
 
   // Clear all filters
   const clearFilters = () => {
     setFilterType('ALL');
     setFilterUser('ALL');
+    setFilterContractor('ALL');
     setFilterDateFrom('');
     setFilterDateTo('');
     setSearchQuery('');
   };
 
   // Get displayed transactions with pagination
-  const displayedTransactions = filteredTransactions.slice(0, displayCount);
-  const hasMore = displayCount < filteredTransactions.length;
+  const displayedTransactions = transactionsState;
+  const hasMore = displayedTransactions.length < totalCount;
 
-  const loadMore = useCallback(() => {
+  const loadMore = useCallback(async () => {
     setIsLoadingMore(true);
-    setTimeout(() => {
-      setDisplayCount(prev => prev + ITEMS_PER_PAGE);
-      setIsLoadingMore(false);
-    }, 300);
-  }, []);
+    await loadPage(false);
+    setIsLoadingMore(false);
+  }, [loadPage]);
 
   // Group transactions by date
   const groupedByDate = displayedTransactions.reduce((acc, tx) => {
@@ -238,9 +257,11 @@ const HistoryLog: React.FC<HistoryLogProps> = ({
   }, {} as Record<string, Transaction[]>);
 
   // Export to CSV
-  const handleExport = () => {
+  const handleExport = async () => {
+    const exportQuery = buildQuery(undefined, undefined);
+    const exportRows = await db.getTransactions(exportQuery);
     const headers = ['Date', 'Item', 'Category', 'Type', 'Quantity', 'Unit', 'User', 'Reason', 'Location', 'Amount', 'Bill No.'];
-    const rows = filteredTransactions.map(tx => {
+    const rows = exportRows.map(tx => {
       const item = getItem(tx.itemId);
       return [
         new Date(tx.timestamp).toLocaleString(),
@@ -273,7 +294,7 @@ const HistoryLog: React.FC<HistoryLogProps> = ({
         <div>
           <h2 className="text-xl font-black text-slate-800">Recent Activity</h2>
           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-            {filteredTransactions.length} of {totalCount || transactions.length} entries
+            {displayedTransactions.length} of {totalCount || transactionsState.length} entries
             {isAdmin && <span className="text-indigo-500 ml-2">• ADMIN MODE</span>}
           </p>
         </div>
@@ -375,6 +396,23 @@ const HistoryLog: React.FC<HistoryLogProps> = ({
                 <option value="ALL">All Users</option>
                 {uniqueUsers.map(user => (
                   <option key={user} value={user}>{user}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Contractor Filter */}
+            <div>
+              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
+                Filter by Contractor
+              </label>
+              <select
+                value={filterContractor}
+                onChange={(e) => setFilterContractor(e.target.value)}
+                className="w-full bg-slate-50 border-2 border-slate-100 rounded-xl px-4 py-2.5 focus:border-indigo-500 outline-none text-sm font-medium"
+              >
+                <option value="ALL">All Contractors</option>
+                {contractors.map(c => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
                 ))}
               </select>
             </div>
@@ -488,6 +526,12 @@ const HistoryLog: React.FC<HistoryLogProps> = ({
               <button onClick={() => setFilterUser('ALL')} className="hover:text-indigo-800">×</button>
             </span>
           )}
+          {filterContractor !== 'ALL' && (
+            <span className="inline-flex items-center gap-1 px-2 py-1 bg-indigo-100 text-indigo-600 rounded-lg text-xs font-bold">
+              Contractor: {getContractor(filterContractor)?.name || 'Unknown'}
+              <button onClick={() => setFilterContractor('ALL')} className="hover:text-indigo-800">×</button>
+            </span>
+          )}
           {filterDateFrom && (
             <span className="inline-flex items-center gap-1 px-2 py-1 bg-indigo-100 text-indigo-600 rounded-lg text-xs font-bold">
               From: {filterDateFrom}
@@ -526,6 +570,7 @@ const HistoryLog: React.FC<HistoryLogProps> = ({
               <div className="space-y-3">
                 {txs.map(tx => {
                   const item = getItem(tx.itemId);
+                  const contractor = getContractor(tx.contractorId);
                   const isWIP = tx.type === 'WIP';
                   return (
                     <div key={tx.id} className={`p-4 sm:p-6 rounded-[24px] sm:rounded-[32px] flex flex-col sm:flex-row gap-4 sm:gap-6 items-start sm:items-center shadow-sm hover:shadow-md transition-shadow ${
@@ -550,6 +595,12 @@ const HistoryLog: React.FC<HistoryLogProps> = ({
                               <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">{item?.category || 'General'}</span>
                               {isWIP && (
                                 <span className="text-[9px] font-black text-amber-700 bg-amber-200 px-2 py-0.5 rounded uppercase">Work In Progress</span>
+                              )}
+                              {contractor && (
+                                <span className="text-[9px] font-black text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded uppercase flex items-center gap-1">
+                                  <HardHat size={10} />
+                                  {contractor.name}
+                                </span>
                               )}
                             </div>
                             <h4 className="font-black text-lg sm:text-xl text-slate-800 truncate leading-tight">{item?.name || 'Deleted Item'}</h4>
@@ -672,7 +723,7 @@ const HistoryLog: React.FC<HistoryLogProps> = ({
                 Loading...
               </span>
             ) : (
-              `Load More (${filteredTransactions.length - displayCount} remaining)`
+              `Load More (${Math.max(totalCount - displayedTransactions.length, 0)} remaining)`
             )}
           </button>
         </div>
@@ -778,41 +829,61 @@ const HistoryLog: React.FC<HistoryLogProps> = ({
 
               <div>
                 <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
-                  Location <span className="text-slate-300">(Optional)</span>
+                  Contractor <span className="text-slate-300">(Optional)</span>
                 </label>
-                <input 
-                  type="text" placeholder="e.g. Site A, Block 2"
+                <select
+                  value={editContractorId}
+                  onChange={(e) => setEditContractorId(e.target.value)}
                   className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-3 focus:border-indigo-500 outline-none font-medium"
-                  value={editLocation}
-                  onChange={(e) => setEditLocation(e.target.value)}
-                />
+                >
+                  <option value="">No Contractor</option>
+                  {contractors.map(c => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
-                    Amount ₹ <span className="text-slate-300">(Optional)</span>
-                  </label>
-                  <input 
-                    type="number" step="0.01" placeholder="0.00"
-                    className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-3 focus:border-indigo-500 outline-none font-bold tabular-nums"
-                    value={editAmount}
-                    onChange={(e) => setEditAmount(e.target.value)}
-                  />
-                </div>
+              {editType !== 'OUT' && (
+                <>
+                  <div>
+                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
+                      Location <span className="text-slate-300">(Optional)</span>
+                    </label>
+                    <input 
+                      type="text" placeholder="e.g. Site A, Block 2"
+                      className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-3 focus:border-indigo-500 outline-none font-medium"
+                      value={editLocation}
+                      onChange={(e) => setEditLocation(e.target.value)}
+                    />
+                  </div>
 
-                <div>
-                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
-                    Bill / Invoice No.
-                  </label>
-                  <input 
-                    type="text" placeholder="e.g. INV-001"
-                    className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-3 focus:border-indigo-500 outline-none font-medium"
-                    value={editBillNumber}
-                    onChange={(e) => setEditBillNumber(e.target.value)}
-                  />
-                </div>
-              </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
+                        Amount ₹ <span className="text-slate-300">(Optional)</span>
+                      </label>
+                      <input 
+                        type="number" step="0.01" placeholder="0.00"
+                        className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-3 focus:border-indigo-500 outline-none font-bold tabular-nums"
+                        value={editAmount}
+                        onChange={(e) => setEditAmount(e.target.value)}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
+                        Bill / Invoice No.
+                      </label>
+                      <input 
+                        type="text" placeholder="e.g. INV-001"
+                        className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-3 focus:border-indigo-500 outline-none font-medium"
+                        value={editBillNumber}
+                        onChange={(e) => setEditBillNumber(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                </>
+              )}
 
               <div className="flex gap-3 pt-2">
                 <button 
@@ -929,45 +1000,65 @@ const HistoryLog: React.FC<HistoryLogProps> = ({
                 </div>
               </div>
 
-              <hr className="border-slate-200 my-2" />
-
               <div>
                 <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
-                  Location <span className="text-slate-300">(Optional)</span>
+                  Contractor <span className="text-slate-300">(Optional)</span>
                 </label>
-                <input 
-                  type="text" 
-                  placeholder="e.g. Site A, Block 2"
+                <select
+                  value={newContractorId}
+                  onChange={(e) => setNewContractorId(e.target.value)}
                   className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-3 focus:border-indigo-500 outline-none font-medium"
-                  value={newLocation}
-                  onChange={(e) => setNewLocation(e.target.value)}
-                />
+                >
+                  <option value="">No Contractor</option>
+                  {contractors.map(c => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
-                    Amount ₹
-                  </label>
-                  <input 
-                    type="number" step="0.01" placeholder="0.00"
-                    className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-3 focus:border-indigo-500 outline-none font-bold tabular-nums"
-                    value={newAmount}
-                    onChange={(e) => setNewAmount(e.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
-                    Bill / Invoice No.
-                  </label>
-                  <input 
-                    type="text" placeholder="e.g. INV-001"
-                    className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-3 focus:border-indigo-500 outline-none font-medium"
-                    value={newBillNumber}
-                    onChange={(e) => setNewBillNumber(e.target.value)}
-                  />
-                </div>
-              </div>
+              <hr className="border-slate-200 my-2" />
+
+              {newType !== 'OUT' && (
+                <>
+                  <div>
+                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
+                      Location <span className="text-slate-300">(Optional)</span>
+                    </label>
+                    <input 
+                      type="text" 
+                      placeholder="e.g. Site A, Block 2"
+                      className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-3 focus:border-indigo-500 outline-none font-medium"
+                      value={newLocation}
+                      onChange={(e) => setNewLocation(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
+                        Amount ₹
+                      </label>
+                      <input 
+                        type="number" step="0.01" placeholder="0.00"
+                        className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-3 focus:border-indigo-500 outline-none font-bold tabular-nums"
+                        value={newAmount}
+                        onChange={(e) => setNewAmount(e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
+                        Bill / Invoice No.
+                      </label>
+                      <input 
+                        type="text" placeholder="e.g. INV-001"
+                        className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-3 focus:border-indigo-500 outline-none font-medium"
+                        value={newBillNumber}
+                        onChange={(e) => setNewBillNumber(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                </>
+              )}
 
               <div className="flex gap-3 pt-2">
                 <button 

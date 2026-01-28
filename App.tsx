@@ -10,7 +10,8 @@ import SyncSettings from './components/SyncSettings';
 import LoginPage from './components/LoginPage';
 import UserManager from './components/UserManager';
 import CategoryManager from './components/CategoryManager';
-import { Plus, Minus, Package, History, LayoutDashboard, Cloud, Settings, User as UserIcon, LogOut, Users, Folder } from './components/Icons';
+import ContractorManager from './components/ContractorManager';
+import { Plus, Minus, Package, History, LayoutDashboard, Cloud, Settings, User as UserIcon, LogOut, Users, Folder, HardHat } from './components/Icons';
 
 // Default categories - will be loaded from database
 export const DEFAULT_CATEGORIES = [
@@ -47,6 +48,7 @@ const App: React.FC = () => {
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
+  const [contractors, setContractors] = useState<Contractor[]>([]);
   const [settings, setSettings] = useState<AppSettings>({ googleSheetUrl: '' });
   const [users, setUsers] = useState<User[]>([]);
   const [stockLevels, setStockLevels] = useState<Record<string, { stock: number; wip: number }>>({});
@@ -54,46 +56,63 @@ const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isOnline, setIsOnline] = useState(true);
   const [lastSync, setLastSync] = useState<Date | null>(null);
+  const [pendingSummary, setPendingSummary] = useState({ pending: 0, conflicts: 0 });
+  const [isDataGuarded, setIsDataGuarded] = useState(false);
   
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'items' | 'history' | 'users' | 'categories'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'items' | 'history' | 'users' | 'categories' | 'contractors'>('dashboard');
   const [showTransactionModal, setShowTransactionModal] = useState<{type: TransactionType, item?: InventoryItem} | null>(null);
   const [showSyncSettings, setShowSyncSettings] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
 
   const subscriptionsRef = useRef<(() => void)[]>([]);
+  const refreshPendingSummary = () => setPendingSummary(db.getPendingOpsSummary());
+
+  const loadData = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      if (isSupabaseConfigured() && isOnline) {
+        await db.processPendingOps();
+      }
+      const [loadedItems, loadedTransactions, loadedCategories, loadedContractors, loadedSettings, loadedUsers, loadedStockLevels] = await Promise.all([
+        db.getItems(),
+        db.getTransactions({ limit: 500 }), // Load recent 500 for display only
+        db.getCategories(),
+        db.getContractors(),
+        db.getSettings(),
+        db.getUsers(),
+        db.getStockLevels() // Get accurate stock from ALL transactions
+      ]);
+
+      setItems(loadedItems);
+      setTransactions(loadedTransactions);
+      setCategories(loadedCategories.length > 0 ? loadedCategories.map(c => c.name) : DEFAULT_CATEGORIES);
+      setContractors(loadedContractors);
+      setSettings(loadedSettings);
+      setUsers(loadedUsers);
+      setStockLevels(loadedStockLevels);
+      setLastSync(new Date());
+      setPendingSummary(db.getPendingOpsSummary());
+
+      const guardOverride = localStorage.getItem('qs_guard_override') === 'true';
+      if (!guardOverride && isSupabaseConfigured() && isOnline) {
+        const isCloudEmpty = loadedItems.length === 0 && loadedTransactions.length === 0 && loadedUsers.length === 0;
+        if (isCloudEmpty && db.hasCachedCloudData()) {
+          setIsDataGuarded(true);
+        }
+      }
+    } catch (error) {
+      console.error('Error loading data:', error);
+      setIsOnline(false);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [isOnline]);
 
   // Load initial data
   useEffect(() => {
-    const loadData = async () => {
-      setIsLoading(true);
-      try {
-        const [loadedItems, loadedTransactions, loadedCategories, loadedSettings, loadedUsers, loadedStockLevels] = await Promise.all([
-          db.getItems(),
-          db.getTransactions({ limit: 500 }), // Load recent 500 for display only
-          db.getCategories(),
-          db.getSettings(),
-          db.getUsers(),
-          db.getStockLevels() // Get accurate stock from ALL transactions
-        ]);
-
-        setItems(loadedItems);
-        setTransactions(loadedTransactions);
-        setCategories(loadedCategories.length > 0 ? loadedCategories.map(c => c.name) : DEFAULT_CATEGORIES);
-        setSettings(loadedSettings);
-        setUsers(loadedUsers);
-        setStockLevels(loadedStockLevels);
-        setLastSync(new Date());
-      } catch (error) {
-        console.error('Error loading data:', error);
-        setIsOnline(false);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
     loadData();
-  }, []);
+  }, [loadData]);
 
   // Set up real-time subscriptions
   useEffect(() => {
@@ -129,11 +148,20 @@ const App: React.FC = () => {
       setLastSync(new Date());
     });
 
+    // Subscribe to contractors changes
+    const contractorsChannel = subscribeToTable<Contractor>('contractors', async () => {
+      console.log('Contractors changed');
+      const freshContractors = await db.getContractors();
+      setContractors(freshContractors);
+      setLastSync(new Date());
+    });
+
     // Store cleanup functions
     subscriptionsRef.current = [
       () => supabase.removeChannel(itemsChannel),
       () => supabase.removeChannel(transactionsChannel),
-      () => supabase.removeChannel(categoriesChannel)
+      () => supabase.removeChannel(categoriesChannel),
+      () => supabase.removeChannel(contractorsChannel)
     ];
 
     return () => {
@@ -143,7 +171,12 @@ const App: React.FC = () => {
 
   // Connection status monitoring
   useEffect(() => {
-    const handleOnline = () => setIsOnline(true);
+    const handleOnline = async () => {
+      setIsOnline(true);
+      await db.processPendingOps();
+      setPendingSummary(db.getPendingOpsSummary());
+      loadData();
+    };
     const handleOffline = () => setIsOnline(false);
 
     window.addEventListener('online', handleOnline);
@@ -233,6 +266,7 @@ const App: React.FC = () => {
             if (settings.googleSheetUrl) {
               syncToSheets(wipReductionTx);
             }
+            refreshPendingSummary();
             return;
           }
         }
@@ -256,6 +290,7 @@ const App: React.FC = () => {
       if (settings.googleSheetUrl) {
         syncToSheets(newTransaction);
       }
+      refreshPendingSummary();
     }
   };
 
@@ -264,6 +299,7 @@ const App: React.FC = () => {
     if (success) {
       setItems(prev => prev.filter(i => i.id !== id));
       setTransactions(prev => prev.filter(t => t.itemId !== id));
+      refreshPendingSummary();
     }
   };
 
@@ -278,6 +314,7 @@ const App: React.FC = () => {
         const updatedStockLevels = await db.getStockLevels();
         setStockLevels(updatedStockLevels);
       }
+      refreshPendingSummary();
     }
   };
 
@@ -288,6 +325,7 @@ const App: React.FC = () => {
       // Update stock levels after deletion
       const updatedStockLevels = await db.getStockLevels();
       setStockLevels(updatedStockLevels);
+      refreshPendingSummary();
     }
   };
 
@@ -317,6 +355,7 @@ const App: React.FC = () => {
       setItems(prev => prev.map(item =>
         item.id === itemId ? { ...item, ...updates } : item
       ));
+      refreshPendingSummary();
     }
   };
 
@@ -324,6 +363,7 @@ const App: React.FC = () => {
     const created = await db.createItem(item);
     if (created) {
       setItems(prev => [...prev, created]);
+      refreshPendingSummary();
     }
   };
 
@@ -332,6 +372,7 @@ const App: React.FC = () => {
     if (success) {
       setItems(prev => prev.filter(item => item.id !== itemId));
       setTransactions(prev => prev.filter(t => t.itemId !== itemId));
+      refreshPendingSummary();
     }
   };
 
@@ -355,12 +396,19 @@ const App: React.FC = () => {
     }
     
     setCategories(newCategories);
+    refreshPendingSummary();
   };
 
   const handleSaveSettings = async (newSettings: AppSettings) => {
     await db.saveSettings(newSettings);
     setSettings(newSettings);
     setShowSyncSettings(false);
+    refreshPendingSummary();
+  };
+
+  const acknowledgeDataGuard = () => {
+    localStorage.setItem('qs_guard_override', 'true');
+    setIsDataGuarded(false);
   };
 
   // Show login page if not authenticated
@@ -377,6 +425,28 @@ const App: React.FC = () => {
             <Package size={32} className="text-white" />
           </div>
           <p className="text-slate-400 font-bold">Loading inventory...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (isDataGuarded) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
+        <div className="max-w-lg w-full bg-white rounded-3xl shadow-2xl border border-slate-100 p-8 text-center">
+          <div className="w-14 h-14 bg-amber-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+            <span className="text-2xl">⚠️</span>
+          </div>
+          <h2 className="text-2xl font-black text-slate-900 mb-2">Data Safety Check</h2>
+          <p className="text-slate-500 text-sm mb-6">
+            The cloud database looks empty, but cached data exists on this device. This can happen after a deploy or when pointing to a new database.
+          </p>
+          <button
+            onClick={acknowledgeDataGuard}
+            className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black hover:bg-slate-800 transition-all"
+          >
+            I Understand — Continue
+          </button>
         </div>
       </div>
     );
@@ -402,6 +472,9 @@ const App: React.FC = () => {
             </button>
             <button onClick={() => setActiveTab('categories')} className={`p-4 rounded-2xl transition-all md:mt-2 ${activeTab === 'categories' ? 'bg-purple-600 text-white shadow-xl scale-110' : 'text-slate-400 hover:bg-slate-100'}`}>
               <Folder size={28} />
+            </button>
+            <button onClick={() => setActiveTab('contractors')} className={`p-4 rounded-2xl transition-all md:mt-2 ${activeTab === 'contractors' ? 'bg-purple-600 text-white shadow-xl scale-110' : 'text-slate-400 hover:bg-slate-100'}`}>
+              <HardHat size={28} />
             </button>
           </>
         )}
@@ -457,6 +530,16 @@ const App: React.FC = () => {
                     • Updated {lastSync.toLocaleTimeString()}
                   </span>
                 )}
+                {pendingSummary.pending > 0 && (
+                  <span className="text-amber-500">
+                    • {pendingSummary.pending} Pending Sync
+                  </span>
+                )}
+                {pendingSummary.conflicts > 0 && (
+                  <span className="text-red-500">
+                    • Sync Conflict Detected
+                  </span>
+                )}
               </p>
             </div>
             <h1 className="text-4xl sm:text-6xl font-black text-slate-900 tracking-tight">
@@ -465,6 +548,7 @@ const App: React.FC = () => {
               {activeTab === 'history' && 'Logs'}
               {activeTab === 'users' && 'Users'}
               {activeTab === 'categories' && 'Categories'}
+              {activeTab === 'contractors' && 'Contractors'}
             </h1>
           </div>
           <div className="flex gap-3">
@@ -524,6 +608,16 @@ const App: React.FC = () => {
             onDeleteItem={handleDeleteItem}
           />
         )}
+        {activeTab === 'contractors' && session.user.role === 'admin' && (
+          <ContractorManager 
+            contractors={contractors} 
+            transactions={transactions}
+            items={items}
+            onCreate={db.createContractor}
+            onUpdate={db.updateContractor}
+            onDelete={db.deleteContractor}
+          />
+        )}
       </main>
 
       {showTransactionModal && (
@@ -533,10 +627,15 @@ const App: React.FC = () => {
           items={items}
           transactions={transactions}
           categories={categories}
+          contractors={contractors}
           session={session}
           stockLevels={stockLevels}
           onClose={() => setShowTransactionModal(null)}
           onSubmit={addTransaction}
+          onRefreshContractors={async () => {
+            const fresh = await db.getContractors();
+            setContractors(fresh);
+          }}
         />
       )}
 

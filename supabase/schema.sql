@@ -16,7 +16,8 @@ CREATE TABLE IF NOT EXISTS users (
     password VARCHAR(255) NOT NULL,
     display_name VARCHAR(100) NOT NULL,
     role VARCHAR(10) DEFAULT 'user' CHECK (role IN ('admin', 'user')),
-    created_at TIMESTAMPTZ DEFAULT NOW()
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- Create index for faster login lookups
@@ -29,11 +30,25 @@ CREATE TABLE IF NOT EXISTS categories (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name VARCHAR(100) UNIQUE NOT NULL,
     sort_order INTEGER DEFAULT 0,
-    created_at TIMESTAMPTZ DEFAULT NOW()
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- Create index for sorting
 CREATE INDEX IF NOT EXISTS idx_categories_sort ON categories(sort_order);
+
+-- ============================================
+-- CONTRACTORS TABLE
+-- ============================================
+CREATE TABLE IF NOT EXISTS contractors (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name VARCHAR(100) UNIQUE NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Create index for name lookups
+CREATE INDEX IF NOT EXISTS idx_contractors_name ON contractors(name);
 
 -- ============================================
 -- ITEMS TABLE
@@ -46,7 +61,8 @@ CREATE TABLE IF NOT EXISTS items (
     min_stock INTEGER DEFAULT 0,
     description TEXT,
     created_by UUID REFERENCES users(id) ON DELETE SET NULL,
-    created_at TIMESTAMPTZ DEFAULT NOW()
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- Create indexes for common queries
@@ -70,8 +86,10 @@ CREATE TABLE IF NOT EXISTS transactions (
     location VARCHAR(200),
     amount DECIMAL(12, 2),
     bill_number VARCHAR(100),
+    contractor_id UUID REFERENCES contractors(id) ON DELETE SET NULL,
     created_by UUID REFERENCES users(id) ON DELETE SET NULL,
-    created_at TIMESTAMPTZ DEFAULT NOW()
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- Create indexes for performance on large datasets
@@ -79,6 +97,7 @@ CREATE INDEX IF NOT EXISTS idx_transactions_item ON transactions(item_id);
 CREATE INDEX IF NOT EXISTS idx_transactions_created_at ON transactions(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_transactions_type ON transactions(type);
 CREATE INDEX IF NOT EXISTS idx_transactions_created_by ON transactions(created_by);
+CREATE INDEX IF NOT EXISTS idx_transactions_contractor ON transactions(contractor_id);
 
 -- Composite index for common query patterns
 CREATE INDEX IF NOT EXISTS idx_transactions_item_date ON transactions(item_id, created_at DESC);
@@ -92,6 +111,42 @@ CREATE TABLE IF NOT EXISTS app_settings (
     value TEXT,
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- ============================================
+-- UPDATED_AT TRIGGERS
+-- ============================================
+
+CREATE OR REPLACE FUNCTION set_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER set_categories_updated_at
+BEFORE UPDATE ON categories
+FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+CREATE TRIGGER set_users_updated_at
+BEFORE UPDATE ON users
+FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+CREATE TRIGGER set_items_updated_at
+BEFORE UPDATE ON items
+FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+CREATE TRIGGER set_transactions_updated_at
+BEFORE UPDATE ON transactions
+FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+CREATE TRIGGER set_app_settings_updated_at
+BEFORE UPDATE ON app_settings
+FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+CREATE TRIGGER set_contractors_updated_at
+BEFORE UPDATE ON contractors
+FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 -- ============================================
 -- SEED DEFAULT DATA
@@ -154,6 +209,7 @@ ALTER PUBLICATION supabase_realtime ADD TABLE categories;
 ALTER PUBLICATION supabase_realtime ADD TABLE items;
 ALTER PUBLICATION supabase_realtime ADD TABLE transactions;
 ALTER PUBLICATION supabase_realtime ADD TABLE app_settings;
+ALTER PUBLICATION supabase_realtime ADD TABLE contractors;
 
 -- ============================================
 -- USEFUL VIEWS (Optional)

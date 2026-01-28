@@ -12,6 +12,7 @@ export interface Database {
           display_name: string;
           role: 'admin' | 'user';
           created_at: string;
+          updated_at: string;
         };
         Insert: {
           id?: string;
@@ -20,6 +21,7 @@ export interface Database {
           display_name: string;
           role?: 'admin' | 'user';
           created_at?: string;
+          updated_at?: string;
         };
         Update: {
           id?: string;
@@ -28,6 +30,7 @@ export interface Database {
           display_name?: string;
           role?: 'admin' | 'user';
           created_at?: string;
+          updated_at?: string;
         };
       };
       categories: {
@@ -36,18 +39,21 @@ export interface Database {
           name: string;
           created_at: string;
           sort_order: number;
+          updated_at: string;
         };
         Insert: {
           id?: string;
           name: string;
           created_at?: string;
           sort_order?: number;
+          updated_at?: string;
         };
         Update: {
           id?: string;
           name?: string;
           created_at?: string;
           sort_order?: number;
+          updated_at?: string;
         };
       };
       items: {
@@ -60,6 +66,7 @@ export interface Database {
           description: string | null;
           created_by: string;
           created_at: string;
+          updated_at: string;
         };
         Insert: {
           id?: string;
@@ -70,6 +77,7 @@ export interface Database {
           description?: string | null;
           created_by: string;
           created_at?: string;
+          updated_at?: string;
         };
         Update: {
           id?: string;
@@ -80,6 +88,7 @@ export interface Database {
           description?: string | null;
           created_by?: string;
           created_at?: string;
+          updated_at?: string;
         };
       };
       transactions: {
@@ -94,8 +103,10 @@ export interface Database {
           location: string | null;
           amount: number | null;
           bill_number: string | null;
+          contractor_id: string | null;
           created_by: string;
           created_at: string;
+          updated_at: string;
         };
         Insert: {
           id?: string;
@@ -108,8 +119,10 @@ export interface Database {
           location?: string | null;
           amount?: number | null;
           bill_number?: string | null;
+          contractor_id?: string | null;
           created_by: string;
           created_at?: string;
+          updated_at?: string;
         };
         Update: {
           id?: string;
@@ -122,8 +135,30 @@ export interface Database {
           location?: string | null;
           amount?: number | null;
           bill_number?: string | null;
+          contractor_id?: string | null;
           created_by?: string;
           created_at?: string;
+          updated_at?: string;
+        };
+      };
+      contractors: {
+        Row: {
+          id: string;
+          name: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          name: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          name?: string;
+          created_at?: string;
+          updated_at?: string;
         };
       };
       app_settings: {
@@ -158,12 +193,20 @@ export interface User {
   displayName: string;
   role: 'admin' | 'user';
   createdAt: number;
+  updatedAt?: number;
 }
 
 export interface Category {
   id: string;
   name: string;
   sortOrder: number;
+  updatedAt?: number;
+}
+
+export interface Contractor {
+  id: string;
+  name: string;
+  updatedAt?: number;
 }
 
 export interface InventoryItem {
@@ -175,6 +218,7 @@ export interface InventoryItem {
   minStock: number;
   description?: string;
   createdBy: string;
+  updatedAt?: number;
 }
 
 export interface Transaction {
@@ -189,7 +233,9 @@ export interface Transaction {
   location?: string;
   amount?: number;
   billNumber?: string;
+  contractorId?: string;
   createdBy: string;
+  updatedAt?: number;
 }
 
 export interface AuthSession {
@@ -208,13 +254,21 @@ export const dbToUser = (row: Database['public']['Tables']['users']['Row']): Use
   password: row.password,
   displayName: row.display_name,
   role: row.role,
-  createdAt: new Date(row.created_at).getTime()
+  createdAt: new Date(row.created_at).getTime(),
+  updatedAt: row.updated_at ? new Date(row.updated_at).getTime() : undefined
 });
 
 export const dbToCategory = (row: Database['public']['Tables']['categories']['Row']): Category => ({
   id: row.id,
   name: row.name,
-  sortOrder: row.sort_order
+  sortOrder: row.sort_order,
+  updatedAt: row.updated_at ? new Date(row.updated_at).getTime() : undefined
+});
+
+export const dbToContractor = (row: Database['public']['Tables']['contractors']['Row']): Contractor => ({
+  id: row.id,
+  name: row.name,
+  updatedAt: row.updated_at ? new Date(row.updated_at).getTime() : undefined
 });
 
 export const dbToItem = (
@@ -228,7 +282,8 @@ export const dbToItem = (
   unit: row.unit,
   minStock: row.min_stock,
   description: row.description || undefined,
-  createdBy: row.created_by
+  createdBy: row.created_by,
+  updatedAt: row.updated_at ? new Date(row.updated_at).getTime() : undefined
 });
 
 export const dbToTransaction = (row: Database['public']['Tables']['transactions']['Row']): Transaction => ({
@@ -243,5 +298,7 @@ export const dbToTransaction = (row: Database['public']['Tables']['transactions'
   location: row.location || undefined,
   amount: row.amount || undefined,
   billNumber: row.bill_number || undefined,
-  createdBy: row.created_by
+  contractorId: row.contractor_id || undefined,
+  createdBy: row.created_by,
+  updatedAt: row.updated_at ? new Date(row.updated_at).getTime() : undefined
 });
