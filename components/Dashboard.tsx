@@ -293,75 +293,73 @@ const Dashboard: React.FC<DashboardProps> = ({
 
                 {/* Category Items Dropdown */}
                 {isExpanded && (
-                  <div className="border-t border-slate-100 divide-y divide-slate-50">
+                  <div className="border-t border-slate-100 divide-y divide-slate-100">
                     {categoryItems.map(item => (
                       <div 
                         key={item.id} 
-                        className={`flex items-center gap-3 p-3 hover:bg-slate-50 transition-colors ${
+                        className={`p-4 hover:bg-slate-50 transition-colors ${
                           item.wip > 0 ? 'bg-amber-50/50' : ''
                         }`}
                       >
-                        {/* Item Info */}
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <h4 className="font-black text-lg text-slate-800 truncate">{item.name}</h4>
+                        {/* Item Name - Full Width, Prominent */}
+                        <div className="mb-3">
+                          <h4 className="font-black text-xl text-emerald-700 leading-tight">{item.name}</h4>
+                          <div className="flex flex-wrap items-center gap-2 mt-1 text-sm text-slate-500 font-bold">
+                            <span className="uppercase">{item.unit}</span>
+                            {item.location && (
+                              <span className="text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full text-xs">📍 {item.location}</span>
+                            )}
                             {item.wip > 0 && (
-                              <span className="shrink-0 text-xs font-black text-amber-600 bg-amber-100 px-2 py-0.5 rounded">
-                                WIP:{item.wip}
+                              <span className="text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full text-xs font-black">
+                                ⏳ WIP: {item.wip}
                               </span>
                             )}
                           </div>
-                          <div className="flex items-center gap-2 text-xs text-slate-400 font-bold uppercase tracking-wider">
-                            <span>{item.unit}</span>
-                            {item.location && (
-                              <>
-                                <span>•</span>
-                                <span className="text-indigo-500 normal-case">📍 {item.location}</span>
-                              </>
-                            )}
-                          </div>
                         </div>
 
-                        {/* Stock Display */}
-                        <div className="text-right shrink-0 mr-2">
-                          <div className={`text-2xl font-black tabular-nums leading-none ${
-                            item.net <= 0 ? 'text-red-500' : item.net < 10 ? 'text-amber-500' : 'text-slate-900'
-                          }`}>
-                            {item.net}
+                        {/* Stock + Actions Row */}
+                        <div className="flex items-center justify-between">
+                          {/* Stock Display */}
+                          <div className="flex items-center gap-2">
+                            <div className={`text-3xl font-black tabular-nums ${
+                              item.net <= 0 ? 'text-red-500' : item.net < 10 ? 'text-amber-500' : 'text-slate-900'
+                            }`}>
+                              {item.net}
+                            </div>
+                            <div className="text-sm text-slate-400 font-bold uppercase">in stock</div>
                           </div>
-                          <div className="text-xs text-slate-400 font-bold uppercase">stock</div>
-                        </div>
 
-                        {/* Action Buttons */}
-                        <div className="flex gap-1.5 shrink-0">
-                          <button 
-                            onClick={() => onAction('OUT', item)}
-                            className="w-9 h-9 bg-red-500 text-white rounded-lg flex items-center justify-center active:scale-95 transition-all shadow-sm"
-                            title="Take Out"
-                          >
-                            <ArrowUp size={16} />
-                          </button>
-                          <button 
-                            onClick={() => onAction('IN', item)}
-                            className="w-9 h-9 bg-emerald-500 text-white rounded-lg flex items-center justify-center active:scale-95 transition-all shadow-sm"
-                            title="Receive"
-                          >
-                            <Plus size={16} />
-                          </button>
-                          <button 
-                            onClick={() => onAction('WIP', item)}
-                            className="w-9 h-9 bg-amber-100 text-amber-600 rounded-lg flex items-center justify-center active:scale-95 transition-all border border-amber-200"
-                            title="WIP"
-                          >
-                            <Timer size={16} />
-                          </button>
-                          <button 
-                            onClick={() => openHistory(item.id)}
-                            className="w-9 h-9 bg-slate-100 text-slate-500 rounded-lg flex items-center justify-center active:scale-95 transition-all"
-                            title="History"
-                          >
-                            <History size={16} />
-                          </button>
+                          {/* Action Buttons */}
+                          <div className="flex gap-2">
+                            <button 
+                              onClick={() => onAction('OUT', item)}
+                              className="w-11 h-11 bg-red-500 text-white rounded-xl flex items-center justify-center active:scale-95 transition-all shadow-md"
+                              title="Take Out"
+                            >
+                              <ArrowUp size={20} />
+                            </button>
+                            <button 
+                              onClick={() => onAction('IN', item)}
+                              className="w-11 h-11 bg-emerald-500 text-white rounded-xl flex items-center justify-center active:scale-95 transition-all shadow-md"
+                              title="Receive"
+                            >
+                              <Plus size={20} />
+                            </button>
+                            <button 
+                              onClick={() => onAction('WIP', item)}
+                              className="w-11 h-11 bg-amber-400 text-white rounded-xl flex items-center justify-center active:scale-95 transition-all shadow-md"
+                              title="WIP"
+                            >
+                              <Timer size={20} />
+                            </button>
+                            <button 
+                              onClick={() => openHistory(item.id)}
+                              className="w-11 h-11 bg-slate-200 text-slate-600 rounded-xl flex items-center justify-center active:scale-95 transition-all"
+                              title="History"
+                            >
+                              <History size={20} />
+                            </button>
+                          </div>
                         </div>
                       </div>
                     ))}

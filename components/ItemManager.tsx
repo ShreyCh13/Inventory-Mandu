@@ -197,45 +197,42 @@ const ItemManager: React.FC<ItemManagerProps> = ({ items, transactions, stockLev
 
                 {/* Category Items Dropdown */}
                 {isExpanded && (
-                  <div className="border-t border-slate-100 divide-y divide-slate-50">
+                  <div className="border-t border-slate-100 divide-y divide-slate-100">
                     {categoryItems.map(item => (
                       <div 
                         key={item.id} 
-                        className={`flex items-center gap-4 p-3 hover:bg-slate-50 transition-colors ${
+                        className={`p-4 hover:bg-slate-50 transition-colors ${
                           item.wip > 0 ? 'bg-amber-50/50' : ''
                         }`}
                       >
-                        {/* Item Info */}
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <p className="font-black text-lg text-slate-800 truncate">{item.name}</p>
-                            {item.wip > 0 && (
-                              <span className="shrink-0 inline-flex items-center gap-1 text-xs font-black text-amber-600 bg-amber-100 px-2 py-0.5 rounded">
-                                <Timer size={12} /> WIP:{item.wip}
-                              </span>
-                            )}
+                        {/* Item Name - Full Width, Prominent */}
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="flex-1">
+                            <h4 className="font-black text-xl text-emerald-700 leading-tight">{item.name}</h4>
+                            <div className="flex flex-wrap items-center gap-2 mt-1 text-sm text-slate-500 font-bold">
+                              <span className="uppercase">{item.unit}</span>
+                              {item.location && (
+                                <span className="text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full text-xs">📍 {item.location}</span>
+                              )}
+                              {item.wip > 0 && (
+                                <span className="text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full text-xs font-black inline-flex items-center gap-1">
+                                  <Timer size={12} /> WIP: {item.wip}
+                                </span>
+                              )}
+                            </div>
                           </div>
-                          <div className="flex items-center gap-2 text-xs text-slate-400 font-bold uppercase tracking-wider">
-                            <span>{item.unit}</span>
-                            {item.location && (
-                              <>
-                                <span>•</span>
-                                <span className="text-indigo-500 normal-case">📍 {item.location}</span>
-                              </>
-                            )}
-                          </div>
-                        </div>
 
-                        {/* Stock */}
-                        <div className="text-right shrink-0">
-                          <span className={`text-2xl font-black tabular-nums ${
-                            item.stock <= 0 ? 'text-red-500' : 
-                            item.stock <= item.minStock ? 'text-amber-500' : 
-                            'text-emerald-600'
-                          }`}>
-                            {item.stock}
-                          </span>
-                          <p className="text-xs text-slate-400 font-bold uppercase">stock</p>
+                          {/* Stock Display */}
+                          <div className="text-right shrink-0">
+                            <div className={`text-3xl font-black tabular-nums ${
+                              item.stock <= 0 ? 'text-red-500' : 
+                              item.stock <= item.minStock ? 'text-amber-500' : 
+                              'text-emerald-600'
+                            }`}>
+                              {item.stock}
+                            </div>
+                            <p className="text-sm text-slate-400 font-bold uppercase">stock</p>
+                          </div>
                         </div>
                       </div>
                     ))}
