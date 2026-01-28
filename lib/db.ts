@@ -221,7 +221,7 @@ export const cleanupOldCacheData = (): void => {
   // Clear any temporary or debug data
   try {
     // Remove any keys that aren't our known cache keys
-    const knownKeys = new Set(Object.values(CACHE_KEYS));
+    const knownKeys = new Set<string>(Object.values(CACHE_KEYS));
     const keysToRemove: string[] = [];
     
     for (const key in localStorage) {
@@ -1735,7 +1735,7 @@ export const createTransaction = async (
   // Check idempotency key before insert to prevent duplicates on network retry
   const { data: existingTx } = await supabase
     .from('transactions')
-    .select('id, item_id, type, quantity, user_name, reason, created_at')
+    .select('*')
     .eq('idempotency_key', idempotencyKey)
     .maybeSingle();
   

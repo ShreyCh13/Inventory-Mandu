@@ -105,9 +105,9 @@ const SyncConflictDialog: React.FC<SyncConflictDialogProps> = ({
                   <p className="text-[10px] text-slate-400">
                     Attempted {formatDate(op.createdAt)}
                   </p>
-                  {op.payload && op.payload.name && (
+                  {op.payload && (op.payload as Record<string, unknown>).name && (
                     <p className="text-xs text-slate-600 mt-1 truncate">
-                      "{String(op.payload.name)}"
+                      "{String((op.payload as Record<string, unknown>).name)}"
                     </p>
                   )}
                 </div>
