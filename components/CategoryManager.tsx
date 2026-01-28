@@ -1,6 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { InventoryItem } from '../types';
 import { Folder, FolderPlus, Trash, Edit, Package } from './Icons';
+import { useConfirm } from './ConfirmDialog';
+
+const ITEMS_PER_CATEGORY_PAGE = 25;
+const CATEGORIES_PER_PAGE = 30;
 
 interface CategoryManagerProps {
   categories: string[];
@@ -21,6 +25,7 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
   onCreateItem,
   onDeleteItem
 }) => {
+  const confirm = useConfirm();
   const [showAddCategory, setShowAddCategory] = useState(false);
   const [editingCategory, setEditingCategory] = useState<string | null>(null);
   const [newCategoryName, setNewCategoryName] = useState('');
@@ -40,10 +45,70 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
   const [addItemMinStock, setAddItemMinStock] = useState('0');
   const [addItemCategory, setAddItemCategory] = useState('');
   const [addItemError, setAddItemError] = useState('');
+  
+  // Pagination and search state for expanded categories
+  const [categoryItemPage, setCategoryItemPage] = useState<Record<string, number>>({});
+  const [categorySearch, setCategorySearch] = useState<Record<string, string>>({});
+  const [categoryFilter, setCategoryFilter] = useState('');
+  const [categoryListPage, setCategoryListPage] = useState(0);
 
-  // Get item count for each category
+  // Get item count for each category - memoized
+  const categoryItemCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    items.forEach(item => {
+      counts[item.category] = (counts[item.category] || 0) + 1;
+    });
+    return counts;
+  }, [items]);
+
   const getCategoryItemCount = (category: string) => {
-    return items.filter(item => item.category === category).length;
+    return categoryItemCounts[category] || 0;
+  };
+
+  // Filter categories by search
+  const filteredCategories = useMemo(() => {
+    if (!categoryFilter) return categories;
+    const q = categoryFilter.toLowerCase();
+    return categories.filter(c => c.toLowerCase().includes(q));
+  }, [categories, categoryFilter]);
+
+  // Paginate filtered categories
+  const categoryTotalPages = Math.ceil(filteredCategories.length / CATEGORIES_PER_PAGE);
+  const paginatedCategories = useMemo(() => {
+    const start = categoryListPage * CATEGORIES_PER_PAGE;
+    return filteredCategories.slice(start, start + CATEGORIES_PER_PAGE);
+  }, [filteredCategories, categoryListPage]);
+
+  // Reset category page when filter changes
+  const handleCategoryFilterChange = (value: string) => {
+    setCategoryFilter(value);
+    setCategoryListPage(0);
+  };
+
+  // Get paginated items for a category
+  const getCategoryItems = (category: string) => {
+    let categoryItems = items.filter(item => item.category === category);
+    
+    // Apply search filter if exists
+    const search = categorySearch[category];
+    if (search) {
+      const q = search.toLowerCase();
+      categoryItems = categoryItems.filter(item => 
+        item.name.toLowerCase().includes(q)
+      );
+    }
+    
+    // Apply pagination
+    const page = categoryItemPage[category] || 0;
+    const start = page * ITEMS_PER_CATEGORY_PAGE;
+    const paginatedItems = categoryItems.slice(start, start + ITEMS_PER_CATEGORY_PAGE);
+    
+    return {
+      items: paginatedItems,
+      totalItems: categoryItems.length,
+      currentPage: page,
+      totalPages: Math.ceil(categoryItems.length / ITEMS_PER_CATEGORY_PAGE)
+    };
   };
 
   const resetForm = () => {
@@ -129,11 +194,24 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
     const itemCount = getCategoryItemCount(category);
     
     if (itemCount > 0) {
-      alert(`Cannot delete "${category}" - it has ${itemCount} item(s). Move or delete the items first.`);
+      await confirm({
+        title: 'Cannot Delete',
+        message: `Cannot delete "${category}" - it has ${itemCount} item(s). Move or delete the items first.`,
+        confirmText: 'OK',
+        cancelText: 'Close',
+        variant: 'warning'
+      });
       return;
     }
 
-    if (confirm(`Delete category "${category}"? This action cannot be undone.`)) {
+    const confirmed = await confirm({
+      title: 'Delete Category',
+      message: `Delete category "${category}"? This action cannot be undone.`,
+      confirmText: 'Delete',
+      variant: 'danger'
+    });
+    
+    if (confirmed) {
       onUpdate(categories.filter(c => c !== category));
     }
   };
@@ -244,7 +322,14 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
   };
 
   const handleDeleteItem = async (item: InventoryItem) => {
-    if (!confirm(`Delete item "${item.name}"? This removes it completely.`)) return;
+    const confirmed = await confirm({
+      title: 'Delete Item',
+      message: `Delete item "${item.name}"? This removes it completely.`,
+      confirmText: 'Delete',
+      variant: 'danger'
+    });
+    
+    if (!confirmed) return;
     setIsItemProcessing(true);
     await onDeleteItem(item.id);
     setIsItemProcessing(false);
@@ -318,16 +403,27 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
 
       {/* Categories Grid */}
       <div className="bg-white rounded-3xl shadow-xl border border-slate-100 overflow-hidden">
-        <div className="p-4 bg-slate-50 border-b border-slate-100">
+        <div className="p-4 bg-slate-50 border-b border-slate-100 flex items-center justify-between gap-4 flex-wrap">
           <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-            {categories.length} Categories
+            {filteredCategories.length} of {categories.length} Categories
+            {categoryTotalPages > 1 && ` (Page ${categoryListPage + 1}/${categoryTotalPages})`}
           </p>
+          <div className="relative flex-1 max-w-xs">
+            <input
+              type="text"
+              placeholder="Search categories..."
+              value={categoryFilter}
+              onChange={(e) => handleCategoryFilterChange(e.target.value)}
+              className="w-full pl-8 pr-3 py-2 bg-white border border-slate-200 rounded-lg text-xs"
+            />
+            <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+          </div>
         </div>
         
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 p-4">
-          {categories.map(category => {
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 p-4 max-h-[70vh] overflow-y-auto">
+          {paginatedCategories.map(category => {
             const itemCount = getCategoryItemCount(category);
-            const categoryItems = items.filter(item => item.category === category);
+            const { items: paginatedItems, totalItems, currentPage, totalPages } = getCategoryItems(category);
             return (
               <div key={category} className="space-y-3">
                 <div 
@@ -395,33 +491,77 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
                     >
                       + Add Item to {category}
                     </button>
-                    {categoryItems.length > 0 ? (
-                      categoryItems.map(item => (
-                        <div key={item.id} className="flex items-center justify-between gap-3 p-3 bg-slate-50 rounded-xl">
-                          <div className="min-w-0">
-                            <p className="font-bold text-slate-900 truncate">{item.name}</p>
-                            <p className="text-xs text-slate-500">
-                              {item.unit} • Min {item.minStock}
-                            </p>
+                    
+                    {/* Search within category */}
+                    {itemCount > 5 && (
+                      <div className="relative">
+                        <input
+                          type="text"
+                          placeholder="Search items..."
+                          value={categorySearch[category] || ''}
+                          onChange={(e) => {
+                            setCategorySearch(prev => ({ ...prev, [category]: e.target.value }));
+                            setCategoryItemPage(prev => ({ ...prev, [category]: 0 }));
+                          }}
+                          className="w-full pl-8 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs"
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                        <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                      </div>
+                    )}
+                    
+                    {paginatedItems.length > 0 ? (
+                      <>
+                        {paginatedItems.map(item => (
+                          <div key={item.id} className="flex items-center justify-between gap-3 p-3 bg-slate-50 rounded-xl">
+                            <div className="min-w-0">
+                              <p className="font-bold text-slate-900 truncate">{item.name}</p>
+                              <p className="text-xs text-slate-500">
+                                {item.unit} • Min {item.minStock}
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => startEditItem(item)}
+                                className="px-3 py-1.5 text-xs font-bold text-indigo-600 bg-indigo-50 rounded-lg hover:bg-indigo-100 transition-colors"
+                              >
+                                Edit
+                              </button>
+                              <button
+                                onClick={() => handleDeleteItem(item)}
+                                className="px-3 py-1.5 text-xs font-bold text-red-600 bg-red-50 rounded-lg hover:bg-red-100 transition-colors"
+                              >
+                                Delete
+                              </button>
+                            </div>
                           </div>
-                          <div className="flex items-center gap-2">
+                        ))}
+                        
+                        {/* Pagination for items */}
+                        {totalPages > 1 && (
+                          <div className="flex items-center justify-center gap-2 pt-2" onClick={(e) => e.stopPropagation()}>
                             <button
-                              onClick={() => startEditItem(item)}
-                              className="px-3 py-1.5 text-xs font-bold text-indigo-600 bg-indigo-50 rounded-lg hover:bg-indigo-100 transition-colors"
+                              onClick={() => setCategoryItemPage(prev => ({ ...prev, [category]: Math.max(0, currentPage - 1) }))}
+                              disabled={currentPage === 0}
+                              className="px-2 py-1 text-[10px] font-bold bg-slate-100 rounded disabled:opacity-50"
                             >
-                              Edit
+                              ←
                             </button>
+                            <span className="text-[10px] text-slate-500">{currentPage + 1}/{totalPages}</span>
                             <button
-                              onClick={() => handleDeleteItem(item)}
-                              className="px-3 py-1.5 text-xs font-bold text-red-600 bg-red-50 rounded-lg hover:bg-red-100 transition-colors"
+                              onClick={() => setCategoryItemPage(prev => ({ ...prev, [category]: Math.min(totalPages - 1, currentPage + 1) }))}
+                              disabled={currentPage >= totalPages - 1}
+                              className="px-2 py-1 text-[10px] font-bold bg-slate-100 rounded disabled:opacity-50"
                             >
-                              Delete
+                              →
                             </button>
                           </div>
-                        </div>
-                      ))
+                        )}
+                      </>
                     ) : (
-                      <p className="text-xs text-slate-400 text-center py-3">No items in this category</p>
+                      <p className="text-xs text-slate-400 text-center py-3">
+                        {categorySearch[category] ? 'No matching items' : 'No items in this category'}
+                      </p>
                     )}
                   </div>
                 )}
@@ -429,6 +569,29 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({
             );
           })}
         </div>
+
+        {/* Category List Pagination */}
+        {categoryTotalPages > 1 && (
+          <div className="flex items-center justify-center gap-2 p-4 bg-slate-50 border-t border-slate-100">
+            <button
+              onClick={() => setCategoryListPage(Math.max(0, categoryListPage - 1))}
+              disabled={categoryListPage === 0}
+              className="px-4 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-600 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Previous
+            </button>
+            <span className="text-xs font-bold text-slate-500 px-4">
+              {categoryListPage + 1} / {categoryTotalPages}
+            </span>
+            <button
+              onClick={() => setCategoryListPage(Math.min(categoryTotalPages - 1, categoryListPage + 1))}
+              disabled={categoryListPage >= categoryTotalPages - 1}
+              className="px-4 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-600 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Next
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Info Box */}

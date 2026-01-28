@@ -1,5 +1,17 @@
 # 🚀 Quick Start: Deploy & Install Your App
 
+## What's New in v3.0
+
+- ✅ **Robust for 15-20 concurrent users** on slow WiFi
+- ✅ **Connection quality monitoring** (visual indicators)
+- ✅ **Automatic retry** on network failures
+- ✅ **Offline API caching** via service worker
+- ✅ **Race condition prevention** for stock conflicts
+- ✅ **Debounced search** for better performance
+- ✅ **Custom dialogs** (no more browser alerts)
+
+---
+
 ## Step 1: Deploy to Vercel (2 minutes)
 
 ### Option A: Using Vercel Dashboard (Easiest)
@@ -102,7 +114,7 @@ vercel --prod
 
 ## Step 3: Share with Your Team
 
-Send this message to your 10-12 users:
+Send this message to your 15-20 users:
 
 ```
 📱 Install Inventory Mandu App
@@ -124,7 +136,11 @@ Android:
 3. Tap "Install app"
 4. Tap "Install"
 
-✅ You'll stay logged in for 30 days!
+✅ Features:
+- Works offline with cached data
+- Auto-reconnects on slow WiFi
+- Shows connection quality indicator
+- 30-day login persistence
 ```
 
 ---
@@ -135,8 +151,12 @@ Android:
 2. **Login:**
    - Admin: `admin` / `admin123`
    - User: `mandu` / `mandu123`
-3. **Close the app completely**
-4. **Reopen it** - you should still be logged in! ✅
+3. **Check the connection indicator** at the top:
+   - 🟢 Green = Good connection
+   - 🟡 Amber = Slow connection
+   - 🔴 Red = Poor/Offline
+4. **Close the app completely**
+5. **Reopen it** - you should still be logged in! ✅
 
 ---
 
@@ -168,6 +188,16 @@ After deploying, your URL will be:
 - Don't clear browser data
 - Session lasts 30 days
 
+**"Showing Slow/Poor Connection"**
+- This is normal on slow WiFi
+- The app will continue to work with cached data
+- Operations will sync when connection improves
+
+**"Stock error when adding OUT transaction"**
+- Another user may have taken stock before you
+- The app shows actual available quantity
+- Refresh and try with the correct amount
+
 ---
 
 ## 🎉 That's It!
@@ -176,7 +206,10 @@ Once deployed, you'll have:
 - ✅ A live URL to share
 - ✅ Installable PWA on iOS & Android
 - ✅ 30-day login persistence
-- ✅ Offline support
+- ✅ Offline support with API caching
 - ✅ Real-time sync across all devices
+- ✅ Robust performance for 15-20+ concurrent users
+- ✅ Connection quality monitoring
+- ✅ Automatic retry on network failures
 
 **Your app URL is the one Vercel gives you after deployment!** 🚀

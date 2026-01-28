@@ -1,7 +1,8 @@
 import React, { useState, useMemo } from 'react';
 import { InventoryItem, Transaction, TransactionType, AuthSession, Contractor } from '../types';
 import { ArrowDown, ArrowUp, Timer, HardHat } from './Icons';
-import { calculateStock, createContractor } from '../lib/db';
+import { createContractor } from '../lib/db';
+import SearchableSelect from './SearchableSelect';
 
 interface TransactionFormProps {
   type: TransactionType;
@@ -12,6 +13,7 @@ interface TransactionFormProps {
   contractors: Contractor[];
   session: AuthSession;
   stockLevels?: Record<string, { stock: number; wip: number }>;
+  stockError?: { message: string; available: number } | null;
   onClose: () => void;
   onSubmit: (t: Omit<Transaction, 'id' | 'timestamp'>, newItem?: Omit<InventoryItem, 'id'>) => void;
   onRefreshContractors?: () => void;
@@ -25,6 +27,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
   categories,
   contractors,
   stockLevels,
+  stockError,
   session, 
   onClose, 
   onSubmit,
@@ -42,10 +45,8 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
   const [newContractorName, setNewContractorName] = useState('');
   const [contractorLoading, setContractorLoading] = useState(false);
   
-  // Calculate current stock for selected item
-  const selectedItemStock = selectedItemId ? calculateStock(transactions, selectedItemId) : 0;
-  
-  // Get WIP for selected item
+  // Get stock and WIP from the pre-calculated stockLevels (from database view)
+  const selectedItemStock = selectedItemId && stockLevels ? (stockLevels[selectedItemId]?.stock || 0) : 0;
   const selectedItemWIP = selectedItemId && stockLevels ? (stockLevels[selectedItemId]?.wip || 0) : 0;
   
   // For OUT transactions, check if we should reduce WIP first
@@ -67,8 +68,13 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
   const [amount, setAmount] = useState<string>('');
   const [billNumber, setBillNumber] = useState('');
   
+  // Double-submit protection
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  
   // This must be after quantity is declared
-  const wouldGoNegative = type !== 'IN' && !isNewItem && selectedItemId && (selectedItemStock - quantity) < 0;
+  // For OUT transactions, WIP will be auto-reduced first, so account for that
+  const effectiveStockNeeded = type === 'OUT' ? Math.max(0, quantity - selectedItemWIP) : quantity;
+  const wouldGoNegative = type !== 'IN' && !isNewItem && selectedItemId && (selectedItemStock - effectiveStockNeeded) < 0;
 
   // Combine fixed categories with any custom ones already in use
   const allCategories = useMemo(() => {
@@ -107,51 +113,61 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
     setContractorLoading(false);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Prevent double submission
+    if (isSubmitting) return;
+    
     // Validate: Reason is only required for existing items (OUT/WIP), optional for IN
     if (!isSigned || !user || quantity <= 0) return;
     if (!isNewItem && type !== 'IN' && !reason) return;
     if (wouldGoNegative) return; // Prevent negative stock
 
-    if (isNewItem) {
-      if (!newItemName || !newItemCategory || !newItemUnit) return;
-      
-      onSubmit({
-        itemId: '', // Will be replaced with created item ID
-        type,
-        quantity,
-        user,
-        reason: 'Initial Stocking',
-        signature: `Signed by ${user}`,
-        location: location || undefined,
-        amount: amount ? parseFloat(amount) : undefined,
-        billNumber: billNumber || undefined,
-        contractorId: selectedContractorId || undefined,
-        createdBy: session.user.id
-      }, {
-        name: newItemName,
-        category: newItemCategory,
-        categoryId: '',
-        unit: newItemUnit,
-        minStock: 0,
-        createdBy: session.user.id
-      });
-    } else {
-      if (!selectedItemId) return;
-      onSubmit({
-        itemId: selectedItemId,
-        type,
-        quantity,
-        user,
-        reason: reason,
-        signature: `Signed by ${user}`,
-        location: location || undefined,
-        amount: amount ? parseFloat(amount) : undefined,
-        billNumber: billNumber || undefined,
-        contractorId: selectedContractorId || undefined,
-        createdBy: session.user.id
-      });
+    setIsSubmitting(true);
+    
+    try {
+      if (isNewItem) {
+        if (!newItemName || !newItemCategory || !newItemUnit) return;
+        
+        await onSubmit({
+          itemId: '', // Will be replaced with created item ID
+          type,
+          quantity,
+          user,
+          reason: 'Initial Stocking',
+          signature: `Signed by ${user}`,
+          location: location || undefined,
+          amount: amount ? parseFloat(amount) : undefined,
+          billNumber: billNumber || undefined,
+          contractorId: selectedContractorId || undefined,
+          createdBy: session.user.id
+        }, {
+          name: newItemName,
+          category: newItemCategory,
+          categoryId: '',
+          unit: newItemUnit,
+          minStock: 0,
+          createdBy: session.user.id
+        });
+      } else {
+        if (!selectedItemId) return;
+        await onSubmit({
+          itemId: selectedItemId,
+          type,
+          quantity,
+          user,
+          reason: reason,
+          signature: `Signed by ${user}`,
+          location: location || undefined,
+          amount: amount ? parseFloat(amount) : undefined,
+          billNumber: billNumber || undefined,
+          contractorId: selectedContractorId || undefined,
+          createdBy: session.user.id
+        });
+      }
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -289,18 +305,16 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
                   <span className="inline-flex items-center justify-center w-5 h-5 bg-slate-200 text-slate-600 rounded-full text-[10px] mr-2">2</span>
                   Select Item
                 </label>
-                <select 
-                  className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-4 focus:border-indigo-500 outline-none appearance-none font-bold text-lg"
+                <SearchableSelect
+                  items={filteredItems}
                   value={selectedItemId}
-                  onChange={(e) => setSelectedItemId(e.target.value)}
-                  required
+                  onChange={setSelectedItemId}
+                  getLabel={(item) => `${item.name} — ${stockLevels?.[item.id]?.stock || 0} ${item.unit}`}
+                  getValue={(item) => item.id}
+                  placeholder={selectedCategory ? 'Search items...' : 'Select folder first...'}
                   disabled={!!initialItem || !selectedCategory}
-                >
-                  <option value="">{selectedCategory ? 'Select item...' : 'Select folder first...'}</option>
-                  {filteredItems.map(i => (
-                    <option key={i.id} value={i.id}>{i.name} — {calculateStock(transactions, i.id)} {i.unit}</option>
-                  ))}
-                </select>
+                  emptyMessage="No items in this folder"
+                />
               </div>
 
               {selectedItemId && type !== 'IN' && (
@@ -474,14 +488,38 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
             </div>
           )}
 
+          {stockError && (
+            <div className="bg-amber-50 border-2 border-amber-300 text-amber-700 px-5 py-4 rounded-2xl font-bold text-sm animate-in slide-in-from-top duration-300">
+              <div className="flex items-center gap-2">
+                <span className="text-lg">⚠️</span>
+                <div>
+                  <p>{stockError.message}</p>
+                  {stockError.available > 0 && (
+                    <p className="text-xs text-amber-600 mt-1">Try requesting {stockError.available} or less.</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
           <button 
             type="submit"
-            disabled={!isSigned || (!isNewItem && type !== 'IN' && !reason) || !!wouldGoNegative}
+            disabled={isSubmitting || !isSigned || (!isNewItem && type !== 'IN' && !reason) || !!wouldGoNegative}
             className={`w-full py-5 rounded-[24px] font-black text-xl text-white shadow-xl transition-all ${
-              (!isSigned || (!isNewItem && type !== 'IN' && !reason) || wouldGoNegative) ? 'bg-slate-200 cursor-not-allowed' : `${theme.bg} hover:scale-[1.02] active:scale-95`
+              (isSubmitting || !isSigned || (!isNewItem && type !== 'IN' && !reason) || wouldGoNegative) ? 'bg-slate-200 cursor-not-allowed' : `${theme.bg} hover:scale-[1.02] active:scale-95`
             }`}
           >
-            SUBMIT SIGN-OFF
+            {isSubmitting ? (
+              <span className="flex items-center justify-center gap-3">
+                <svg className="animate-spin h-6 w-6" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                </svg>
+                SUBMITTING...
+              </span>
+            ) : (
+              'SUBMIT SIGN-OFF'
+            )}
           </button>
         </form>
       </div>

@@ -1,6 +1,7 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Contractor, Transaction, InventoryItem } from '../types';
 import { HardHat, Trash, Edit, History, Package } from './Icons';
+import { useConfirm } from './ConfirmDialog';
 
 interface ContractorManagerProps {
   contractors: Contractor[];
@@ -12,6 +13,8 @@ interface ContractorManagerProps {
 }
 
 const TX_PER_PAGE = 50;
+const CONTRACTORS_PER_PAGE = 30;
+const SEARCH_DEBOUNCE_MS = 300;
 
 const ContractorManager: React.FC<ContractorManagerProps> = ({ 
   contractors, 
@@ -21,6 +24,7 @@ const ContractorManager: React.FC<ContractorManagerProps> = ({
   onUpdate,
   onDelete
 }) => {
+  const confirm = useConfirm();
   const [showAdd, setShowAdd] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [name, setName] = useState('');
@@ -28,8 +32,18 @@ const ContractorManager: React.FC<ContractorManagerProps> = ({
   const [isProcessing, setIsProcessing] = useState(false);
   const [selectedContractorId, setSelectedContractorId] = useState<string | null>(null);
   const [view, setView] = useState<'balance' | 'history'>('balance');
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchInput, setSearchInput] = useState('');
+  const [searchQuery, setSearchQuery] = useState(''); // Debounced value
   const [historyPage, setHistoryPage] = useState(0);
+  const [contractorListPage, setContractorListPage] = useState(0);
+
+  // Debounce search query
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setSearchQuery(searchInput);
+    }, SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
 
   const resetForm = () => {
     setName('');
@@ -90,11 +104,24 @@ const ContractorManager: React.FC<ContractorManagerProps> = ({
   const handleDelete = async (contractor: Contractor) => {
     const hasTransactions = transactions.some(t => t.contractorId === contractor.id);
     if (hasTransactions) {
-      alert(`Cannot delete "${contractor.name}" - they have transaction history.`);
+      await confirm({
+        title: 'Cannot Delete',
+        message: `Cannot delete "${contractor.name}" - they have transaction history.`,
+        confirmText: 'OK',
+        cancelText: 'Close',
+        variant: 'warning'
+      });
       return;
     }
 
-    if (confirm(`Delete contractor "${contractor.name}"?`)) {
+    const confirmed = await confirm({
+      title: 'Delete Contractor',
+      message: `Delete contractor "${contractor.name}"?`,
+      confirmText: 'Delete',
+      variant: 'danger'
+    });
+    
+    if (confirmed) {
       await onDelete(contractor.id);
     }
   };
@@ -119,39 +146,75 @@ const ContractorManager: React.FC<ContractorManagerProps> = ({
     return contractors.filter(c => c.name.toLowerCase().includes(q));
   }, [contractors, searchQuery]);
 
-  // Contractor stats
+  // Paginate filtered contractors
+  const contractorTotalPages = Math.ceil(filteredContractors.length / CONTRACTORS_PER_PAGE);
+  const paginatedContractors = useMemo(() => {
+    const start = contractorListPage * CONTRACTORS_PER_PAGE;
+    return filteredContractors.slice(start, start + CONTRACTORS_PER_PAGE);
+  }, [filteredContractors, contractorListPage]);
+
+  // Reset page when search changes
+  const handleSearchChange = (value: string) => {
+    setSearchInput(value);
+    setContractorListPage(0);
+  };
+
+  // Contractor stats - optimized with single pass through transactions using Map
   const contractorStats = useMemo(() => {
+    // Initialize stats for all contractors
     const stats: Record<string, { txCount: number; balance: number }> = {};
     contractors.forEach(c => {
-      const txs = transactions.filter(t => t.contractorId === c.id);
-      let balance = 0;
-      txs.forEach(t => {
-        if (t.type === 'OUT') balance += t.quantity;
-        else if (t.type === 'IN') balance -= t.quantity;
-      });
-      stats[c.id] = { txCount: txs.length, balance };
+      stats[c.id] = { txCount: 0, balance: 0 };
     });
+    
+    // Single pass through transactions - O(n) instead of O(n*m)
+    transactions.forEach(t => {
+      if (t.contractorId && stats[t.contractorId]) {
+        stats[t.contractorId].txCount++;
+        if (t.type === 'OUT') stats[t.contractorId].balance += t.quantity;
+        else if (t.type === 'IN') stats[t.contractorId].balance -= t.quantity;
+      }
+    });
+    
     return stats;
   }, [contractors, transactions]);
 
-  // Calculate ledger for a contractor
-  const getContractorLedger = (contractorId: string) => {
-    const contractorTx = transactions.filter(t => t.contractorId === contractorId);
-    const itemBalances: Record<string, number> = {};
+  // Pre-compute ledgers for all contractors - O(n) single pass
+  const allContractorLedgers = useMemo(() => {
+    const ledgers: Record<string, Record<string, number>> = {};
     
-    contractorTx.forEach(t => {
-      if (!itemBalances[t.itemId]) itemBalances[t.itemId] = 0;
+    // Single pass through all transactions
+    transactions.forEach(t => {
+      if (!t.contractorId) return;
+      if (!ledgers[t.contractorId]) ledgers[t.contractorId] = {};
+      if (!ledgers[t.contractorId][t.itemId]) ledgers[t.contractorId][t.itemId] = 0;
+      
       if (t.type === 'OUT') {
-        itemBalances[t.itemId] += t.quantity;
+        ledgers[t.contractorId][t.itemId] += t.quantity;
       } else if (t.type === 'IN') {
-        itemBalances[t.itemId] -= t.quantity;
+        ledgers[t.contractorId][t.itemId] -= t.quantity;
       }
     });
+    
+    return ledgers;
+  }, [transactions]);
 
+  // Build items lookup map for O(1) access
+  const itemsMap = useMemo(() => {
+    const map = new Map<string, InventoryItem>();
+    items.forEach(item => map.set(item.id, item));
+    return map;
+  }, [items]);
+
+  const selectedLedger = useMemo(() => {
+    if (!selectedContractorId) return [];
+    
+    const itemBalances = allContractorLedgers[selectedContractorId] || {};
+    
     return Object.entries(itemBalances)
       .filter(([_, balance]) => Math.abs(balance) > 0.001)
       .map(([itemId, balance]) => {
-        const item = items.find(i => i.id === itemId);
+        const item = itemsMap.get(itemId);
         return {
           id: itemId,
           name: item?.name || 'Unknown Item',
@@ -159,12 +222,7 @@ const ContractorManager: React.FC<ContractorManagerProps> = ({
           balance
         };
       });
-  };
-
-  const selectedLedger = useMemo(() => {
-    if (!selectedContractorId) return [];
-    return getContractorLedger(selectedContractorId);
-  }, [selectedContractorId, transactions, items]);
+  }, [selectedContractorId, allContractorLedgers, itemsMap]);
 
   // Paginated history
   const contractorHistory = useMemo(() => {
@@ -234,24 +292,31 @@ const ContractorManager: React.FC<ContractorManagerProps> = ({
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Contractors List */}
-        <div className="bg-white rounded-xl border border-slate-100 overflow-hidden">
+        <div className="bg-white rounded-xl border border-slate-100 overflow-hidden flex flex-col">
           {/* Search */}
-          <div className="p-3 border-b border-slate-100">
-            <div className="relative">
-              <input
-                type="text"
-                placeholder="Search contractors..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-8 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm"
-              />
-              <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+          <div className="p-3 border-b border-slate-100 shrink-0">
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <input
+                  type="text"
+                  placeholder="Search contractors..."
+                  value={searchInput}
+                  onChange={(e) => handleSearchChange(e.target.value)}
+                  className="w-full pl-8 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm"
+                />
+                <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+              </div>
+              {contractorTotalPages > 1 && (
+                <span className="text-[10px] text-slate-400 font-bold shrink-0">
+                  {contractorListPage + 1}/{contractorTotalPages}
+                </span>
+              )}
             </div>
           </div>
 
           {/* List */}
-          <div className="divide-y divide-slate-50 max-h-[500px] overflow-y-auto">
-            {filteredContractors.map(contractor => {
+          <div className="divide-y divide-slate-50 max-h-[400px] overflow-y-auto flex-1">
+            {paginatedContractors.map(contractor => {
               const stats = contractorStats[contractor.id];
               const isSelected = selectedContractorId === contractor.id;
               return (
@@ -295,12 +360,33 @@ const ContractorManager: React.FC<ContractorManagerProps> = ({
                 </div>
               );
             })}
-            {filteredContractors.length === 0 && (
+            {paginatedContractors.length === 0 && (
               <div className="p-8 text-center">
                 <p className="text-slate-400 text-sm">{searchQuery ? 'No matches' : 'No contractors yet'}</p>
               </div>
             )}
           </div>
+
+          {/* Contractor List Pagination */}
+          {contractorTotalPages > 1 && (
+            <div className="flex items-center justify-center gap-2 p-3 bg-slate-50 border-t border-slate-100 shrink-0">
+              <button
+                onClick={() => setContractorListPage(Math.max(0, contractorListPage - 1))}
+                disabled={contractorListPage === 0}
+                className="px-3 py-1.5 bg-white border border-slate-200 rounded text-xs font-bold disabled:opacity-50"
+              >
+                Prev
+              </button>
+              <span className="text-xs text-slate-500">{contractorListPage + 1}/{contractorTotalPages}</span>
+              <button
+                onClick={() => setContractorListPage(Math.min(contractorTotalPages - 1, contractorListPage + 1))}
+                disabled={contractorListPage >= contractorTotalPages - 1}
+                className="px-3 py-1.5 bg-white border border-slate-200 rounded text-xs font-bold disabled:opacity-50"
+              >
+                Next
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Contractor Details */}
@@ -370,8 +456,8 @@ const ContractorManager: React.FC<ContractorManagerProps> = ({
                   <div className="space-y-2">
                     {paginatedHistory.map(tx => {
                       const item = items.find(i => i.id === tx.itemId);
-                      // OUT = Given to contractor (red), IN = Taken back (green)
-                      const isGiven = tx.type === 'OUT';
+                      // OUT = Gave to contractor (red), IN = Took back from contractor (green)
+                      const isGave = tx.type === 'OUT';
                       return (
                         <div key={tx.id} className="p-2.5 bg-slate-50 rounded-lg">
                           <div className="flex justify-between items-start gap-2">
@@ -380,8 +466,8 @@ const ContractorManager: React.FC<ContractorManagerProps> = ({
                               <p className="text-[10px] text-slate-400 truncate">"{tx.reason}"</p>
                             </div>
                             <div className="text-right shrink-0">
-                              <span className={`text-sm font-black ${isGiven ? 'text-red-500' : 'text-emerald-600'}`}>
-                                {isGiven ? 'Given' : 'Taken'} {tx.quantity}
+                              <span className={`text-xs font-black ${isGave ? 'text-red-500' : 'text-emerald-600'}`}>
+                                {isGave ? 'Gave' : 'Took back'} {tx.quantity}
                               </span>
                               <p className="text-[9px] text-slate-400">
                                 {new Date(tx.timestamp).toLocaleDateString()}
@@ -422,7 +508,7 @@ const ContractorManager: React.FC<ContractorManagerProps> = ({
               {/* Footer note */}
               {view === 'balance' && selectedLedger.length > 0 && (
                 <div className="p-3 border-t border-slate-100 text-[10px] text-slate-400">
-                  <span className="text-red-500 font-bold">Red</span> = given to contractor, <span className="text-emerald-600 font-bold">Green</span> = taken back
+                  <span className="text-red-500 font-bold">Red</span> = gave to contractor, <span className="text-emerald-600 font-bold">Green</span> = took back from contractor
                 </div>
               )}
             </>

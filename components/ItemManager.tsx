@@ -1,39 +1,68 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { InventoryItem, Transaction } from '../types';
 import { Package, Timer } from './Icons';
-import { calculateStock, calculateWIP } from '../lib/db';
 
 interface ItemManagerProps {
   items: InventoryItem[];
   transactions: Transaction[];
+  stockLevels: Record<string, { stock: number; wip: number }>;
 }
 
-const ITEMS_PER_PAGE = 100;
+const ITEMS_PER_PAGE = 50;
+const SEARCH_DEBOUNCE_MS = 300;
 
-const ItemManager: React.FC<ItemManagerProps> = ({ items, transactions }) => {
+const ItemManager: React.FC<ItemManagerProps> = ({ items, transactions, stockLevels }) => {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchInput, setSearchInput] = useState('');
+  const [searchQuery, setSearchQuery] = useState(''); // Debounced value
   const [currentPage, setCurrentPage] = useState(0);
   const [sortBy, setSortBy] = useState<'name' | 'stock' | 'wip'>('name');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
 
-  // Get the most recent location for an item
-  const getLastLocation = (itemId: string) => {
-    const itemTx = transactions
-      .filter(t => t.itemId === itemId && t.location)
-      .sort((a, b) => b.timestamp - a.timestamp);
-    return itemTx.length > 0 ? itemTx[0].location : null;
-  };
+  // Debounce the search query
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setSearchQuery(searchInput);
+    }, SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
 
-  // Calculate item stats
-  const itemStats = useMemo(() => {
-    return items.map(item => ({
-      ...item,
-      stock: calculateStock(transactions, item.id),
-      wip: calculateWIP(transactions, item.id),
-      location: getLastLocation(item.id)
-    }));
+  // Calculate last location for each item - optimized with Map for O(n) instead of O(n*m)
+  const itemLocations = useMemo(() => {
+    // Track latest transaction timestamp and location for each item
+    const locationData: Record<string, { location: string; timestamp: number }> = {};
+    
+    // Single pass through transactions
+    transactions.forEach(t => {
+      if (!t.location) return;
+      
+      const existing = locationData[t.itemId];
+      if (!existing || t.timestamp > existing.timestamp) {
+        locationData[t.itemId] = { location: t.location, timestamp: t.timestamp };
+      }
+    });
+    
+    // Convert to simple location map
+    const locations: Record<string, string | null> = {};
+    items.forEach(item => {
+      locations[item.id] = locationData[item.id]?.location || null;
+    });
+    
+    return locations;
   }, [items, transactions]);
+
+  // Use pre-calculated stock levels from database view (much more efficient)
+  const itemStats = useMemo(() => {
+    return items.map(item => {
+      const levels = stockLevels[item.id] || { stock: 0, wip: 0 };
+      return {
+        ...item,
+        stock: levels.stock,
+        wip: levels.wip,
+        location: itemLocations[item.id]
+      };
+    });
+  }, [items, stockLevels, itemLocations]);
 
   // Group by category for sidebar
   const categoryStats = useMemo(() => {
@@ -98,7 +127,7 @@ const ItemManager: React.FC<ItemManagerProps> = ({ items, transactions }) => {
   };
 
   const handleSearch = (value: string) => {
-    setSearchQuery(value);
+    setSearchInput(value);
     setCurrentPage(0);
   };
 
@@ -109,12 +138,12 @@ const ItemManager: React.FC<ItemManagerProps> = ({ items, transactions }) => {
         <input
           type="text"
           placeholder="Search items..."
-          value={searchQuery}
+          value={searchInput}
           onChange={(e) => handleSearch(e.target.value)}
           className="w-full pl-10 pr-4 py-3 bg-white border-2 border-slate-100 rounded-xl focus:border-indigo-500 outline-none text-sm font-bold placeholder:text-slate-300"
         />
         <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-        {searchQuery && (
+        {searchInput && (
           <button onClick={() => handleSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
           </button>

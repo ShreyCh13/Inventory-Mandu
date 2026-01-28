@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Transaction, InventoryItem, AuthSession, User, TransactionType, Contractor } from '../types';
 import { ArrowDown, ArrowUp, Timer, Download, Plus, HardHat } from './Icons';
+import { useConfirm } from './ConfirmDialog';
 import * as db from '../lib/db';
 
 interface HistoryLogProps {
@@ -10,12 +11,13 @@ interface HistoryLogProps {
   categories: string[];
   contractors: Contractor[];
   users: User[];
-  onAddTransaction?: (tx: Transaction) => void;
+  onAddTransaction?: (tx: Omit<Transaction, 'id' | 'timestamp'>) => void;
   onUpdateTransaction?: (id: string, updates: Partial<Transaction>) => void;
   onDeleteTransaction?: (id: string) => void;
 }
 
 const ITEMS_PER_PAGE = 50;
+const SEARCH_DEBOUNCE_MS = 400; // Slightly longer for DB queries
 
 const HistoryLog: React.FC<HistoryLogProps> = ({ 
   transactions, 
@@ -28,6 +30,7 @@ const HistoryLog: React.FC<HistoryLogProps> = ({
   onUpdateTransaction, 
   onDeleteTransaction 
 }) => {
+  const confirm = useConfirm();
   const getItem = (id: string) => items.find(i => i.id === id);
   const getContractor = (id?: string) => contractors.find(c => c.id === id);
   const isAdmin = session.user.role === 'admin';
@@ -39,14 +42,49 @@ const HistoryLog: React.FC<HistoryLogProps> = ({
   const [totalCount, setTotalCount] = useState(0);
   const [offset, setOffset] = useState(0);
   
-  // Filter state
-  const [filterType, setFilterType] = useState<'ALL' | 'IN' | 'OUT' | 'WIP'>('ALL');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [filterUser, setFilterUser] = useState<string>('ALL');
-  const [filterContractor, setFilterContractor] = useState<string>('ALL');
-  const [filterDateFrom, setFilterDateFrom] = useState<string>('');
-  const [filterDateTo, setFilterDateTo] = useState<string>('');
+  // Filter state - initialized from sessionStorage
+  const [filterType, setFilterType] = useState<'ALL' | 'IN' | 'OUT' | 'WIP'>(() => {
+    const saved = sessionStorage.getItem('historyFilters');
+    return saved ? JSON.parse(saved).type || 'ALL' : 'ALL';
+  });
+  const [searchInput, setSearchInput] = useState('');
+  const [searchQuery, setSearchQuery] = useState(''); // Debounced value
+  const [filterUser, setFilterUser] = useState<string>(() => {
+    const saved = sessionStorage.getItem('historyFilters');
+    return saved ? JSON.parse(saved).user || 'ALL' : 'ALL';
+  });
+  const [filterContractor, setFilterContractor] = useState<string>(() => {
+    const saved = sessionStorage.getItem('historyFilters');
+    return saved ? JSON.parse(saved).contractor || 'ALL' : 'ALL';
+  });
+  const [filterDateFrom, setFilterDateFrom] = useState<string>(() => {
+    const saved = sessionStorage.getItem('historyFilters');
+    return saved ? JSON.parse(saved).dateFrom || '' : '';
+  });
+  const [filterDateTo, setFilterDateTo] = useState<string>(() => {
+    const saved = sessionStorage.getItem('historyFilters');
+    return saved ? JSON.parse(saved).dateTo || '' : '';
+  });
   const [showFilters, setShowFilters] = useState(false);
+  
+  // Persist filters to sessionStorage when they change
+  useEffect(() => {
+    sessionStorage.setItem('historyFilters', JSON.stringify({
+      type: filterType,
+      user: filterUser,
+      contractor: filterContractor,
+      dateFrom: filterDateFrom,
+      dateTo: filterDateTo
+    }));
+  }, [filterType, filterUser, filterContractor, filterDateFrom, filterDateTo]);
+
+  // Debounce search query
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setSearchQuery(searchInput);
+    }, SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
 
   const searchItemIds = useMemo(() => {
     if (!searchQuery) return [];
@@ -55,6 +93,11 @@ const HistoryLog: React.FC<HistoryLogProps> = ({
       .filter(item => item.name.toLowerCase().includes(q) || item.category.toLowerCase().includes(q))
       .map(item => item.id);
   }, [items, searchQuery]);
+
+  // Track the current offset with a ref to avoid dependency loops
+  const offsetRef = useRef(0);
+  const isLoadingRef = useRef(false);
+  const lastTransactionsLength = useRef(0);
 
   const buildQuery = useCallback((limit?: number, queryOffset?: number) => {
     const fromDate = filterDateFrom ? new Date(filterDateFrom) : undefined;
@@ -75,29 +118,47 @@ const HistoryLog: React.FC<HistoryLogProps> = ({
   }, [filterType, filterUser, filterContractor, filterDateFrom, filterDateTo, searchQuery, searchItemIds]);
 
   const loadPage = useCallback(async (reset = false) => {
+    // Prevent concurrent loads
+    if (isLoadingRef.current) return;
+    isLoadingRef.current = true;
     setIsLoading(true);
-    const nextOffset = reset ? 0 : offset;
-    const query = buildQuery(ITEMS_PER_PAGE, nextOffset);
-    const [page, count] = await Promise.all([
-      db.getTransactions(query),
-      db.getTransactionCount(buildQuery(undefined, undefined))
-    ]);
-    setTotalCount(count);
-    setTransactionsState(prev => reset ? page : [...prev, ...page]);
-    setOffset(nextOffset + page.length);
-    setIsLoading(false);
-  }, [buildQuery, offset]);
+    
+    try {
+      const nextOffset = reset ? 0 : offsetRef.current;
+      const query = buildQuery(ITEMS_PER_PAGE, nextOffset);
+      const [page, count] = await Promise.all([
+        db.getTransactions(query),
+        db.getTransactionCount(buildQuery(undefined, undefined))
+      ]);
+      setTotalCount(count);
+      setTransactionsState(prev => reset ? page : [...prev, ...page]);
+      offsetRef.current = nextOffset + page.length;
+      setOffset(offsetRef.current);
+    } finally {
+      setIsLoading(false);
+      isLoadingRef.current = false;
+    }
+  }, [buildQuery]);
 
+  // Load when filters change - use a stable reference for the effect
+  const filterKey = `${filterType}-${filterUser}-${filterContractor}-${filterDateFrom}-${filterDateTo}-${searchQuery}`;
+  
   useEffect(() => {
+    offsetRef.current = 0;
     setOffset(0);
     loadPage(true);
-  }, [filterType, filterUser, filterContractor, filterDateFrom, filterDateTo, searchQuery, loadPage]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterKey]);
 
+  // Reload when parent transactions array changes (new transaction added)
   useEffect(() => {
-    if (transactions.length > 0) {
+    if (transactions.length !== lastTransactionsLength.current && transactions.length > 0) {
+      lastTransactionsLength.current = transactions.length;
+      offsetRef.current = 0;
       loadPage(true);
     }
-  }, [transactions, loadPage]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [transactions.length]);
 
   const getUserName = (userId: string) => {
     const user = users.find(u => u.id === userId);
@@ -185,22 +246,19 @@ const HistoryLog: React.FC<HistoryLogProps> = ({
   const saveNewTransaction = () => {
     if (!onAddTransaction || !newItemId || !newReason || !newQuantity) return;
     
-    const newTx: Transaction = {
-      id: crypto.randomUUID(),
+    // Don't include id/timestamp - they will be generated by db.createTransaction
+    onAddTransaction({
       itemId: newItemId,
       type: newType,
       quantity: parseInt(newQuantity) || 1,
       user: newUser || session.user.displayName,
       reason: newReason,
-      timestamp: Date.now(),
       location: newLocation || undefined,
       amount: newAmount ? parseFloat(newAmount) : undefined,
       billNumber: newBillNumber || undefined,
       contractorId: newContractorId || undefined,
       createdBy: session.user.id
-    };
-    
-    onAddTransaction(newTx);
+    });
     setShowAddModal(false);
   };
 
@@ -222,8 +280,10 @@ const HistoryLog: React.FC<HistoryLogProps> = ({
     }).format(new Date(ts));
   };
 
-  // Get unique users from transactions for filter dropdown
-  const uniqueUsers = Array.from(new Set(transactionsState.map(tx => tx.user))).sort();
+  // Get unique users from transactions for filter dropdown - memoized
+  const uniqueUsers = useMemo(() => {
+    return Array.from(new Set(transactionsState.map(tx => tx.user))).sort();
+  }, [transactionsState]);
 
   // Check if any filters are active
   const hasActiveFilters = filterType !== 'ALL' || filterUser !== 'ALL' || filterContractor !== 'ALL' || filterDateFrom || filterDateTo || searchQuery;
@@ -235,6 +295,7 @@ const HistoryLog: React.FC<HistoryLogProps> = ({
     setFilterContractor('ALL');
     setFilterDateFrom('');
     setFilterDateTo('');
+    setSearchInput('');
     setSearchQuery('');
   };
 
@@ -243,48 +304,94 @@ const HistoryLog: React.FC<HistoryLogProps> = ({
   const hasMore = displayedTransactions.length < totalCount;
 
   const loadMore = useCallback(async () => {
+    if (isLoadingRef.current) return;
     setIsLoadingMore(true);
     await loadPage(false);
     setIsLoadingMore(false);
   }, [loadPage]);
 
-  // Group transactions by date
-  const groupedByDate = displayedTransactions.reduce((acc, tx) => {
-    const date = formatDate(tx.timestamp);
-    if (!acc[date]) acc[date] = [];
-    acc[date].push(tx);
-    return acc;
-  }, {} as Record<string, Transaction[]>);
+  // Group transactions by date - memoized to prevent recalculation on every render
+  const groupedByDate = useMemo(() => {
+    return displayedTransactions.reduce((acc, tx) => {
+      const date = formatDate(tx.timestamp);
+      if (!acc[date]) acc[date] = [];
+      acc[date].push(tx);
+      return acc;
+    }, {} as Record<string, Transaction[]>);
+  }, [displayedTransactions]);
 
-  // Export to CSV
+  // Export to CSV with chunked fetching to prevent memory issues
+  const [isExporting, setIsExporting] = useState(false);
+  
   const handleExport = async () => {
-    const exportQuery = buildQuery(undefined, undefined);
-    const exportRows = await db.getTransactions(exportQuery);
-    const headers = ['Date', 'Item', 'Category', 'Type', 'Quantity', 'Unit', 'User', 'Reason', 'Location', 'Amount', 'Bill No.'];
-    const rows = exportRows.map(tx => {
-      const item = getItem(tx.itemId);
-      return [
-        new Date(tx.timestamp).toLocaleString(),
-        item?.name || 'Deleted',
-        item?.category || '',
-        tx.type,
-        tx.quantity,
-        item?.unit || '',
-        tx.user,
-        tx.reason,
-        tx.location || '',
-        tx.amount || '',
-        tx.billNumber || ''
-      ].join(',');
-    });
+    if (isExporting) return;
+    setIsExporting(true);
     
-    const csv = [headers.join(','), ...rows].join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `inventory-log-${new Date().toISOString().split('T')[0]}.csv`;
-    a.click();
+    try {
+      const CHUNK_SIZE = 1000;
+      const headers = ['Date', 'Item', 'Category', 'Type', 'Quantity', 'Unit', 'User', 'Reason', 'Location', 'Amount', 'Bill No.', 'Contractor'];
+      const allRows: string[] = [];
+      let offset = 0;
+      
+      // Escape CSV field
+      const escapeCSV = (field: string | number | undefined | null): string => {
+        if (field === undefined || field === null) return '';
+        const str = String(field);
+        if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+          return `"${str.replace(/"/g, '""')}"`;
+        }
+        return str;
+      };
+      
+      // Fetch transactions in chunks
+      while (true) {
+        const exportQuery = buildQuery(CHUNK_SIZE, offset);
+        const chunk = await db.getTransactions(exportQuery);
+        
+        if (chunk.length === 0) break;
+        
+        chunk.forEach(tx => {
+          const item = getItem(tx.itemId);
+          const contractor = tx.contractorId ? contractors.find(c => c.id === tx.contractorId) : null;
+          allRows.push([
+            escapeCSV(new Date(tx.timestamp).toLocaleString()),
+            escapeCSV(item?.name || 'Deleted'),
+            escapeCSV(item?.category || ''),
+            escapeCSV(tx.type),
+            escapeCSV(tx.quantity),
+            escapeCSV(item?.unit || ''),
+            escapeCSV(tx.user),
+            escapeCSV(tx.reason),
+            escapeCSV(tx.location || ''),
+            escapeCSV(tx.amount || ''),
+            escapeCSV(tx.billNumber || ''),
+            escapeCSV(contractor?.name || '')
+          ].join(','));
+        });
+        
+        offset += chunk.length;
+        
+        // Stop if we got less than chunk size (no more data)
+        if (chunk.length < CHUNK_SIZE) break;
+      }
+      
+      // Create and download CSV
+      const csv = [headers.join(','), ...allRows].join('\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `inventory-log-${new Date().toISOString().split('T')[0]}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Export failed:', error);
+      alert('Export failed. Please try again.');
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   return (
@@ -315,8 +422,8 @@ const HistoryLog: React.FC<HistoryLogProps> = ({
             <input
               type="text"
               placeholder="Search..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
               className="w-full pl-10 pr-4 py-2.5 bg-white border-2 border-slate-100 rounded-xl focus:border-indigo-500 outline-none text-sm font-medium"
             />
             <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
@@ -359,10 +466,22 @@ const HistoryLog: React.FC<HistoryLogProps> = ({
           
           <button 
             onClick={handleExport}
-            className="p-2.5 bg-white border-2 border-slate-100 rounded-xl text-slate-400 hover:text-indigo-600 hover:border-indigo-100 transition-all"
-            title="Export to CSV"
+            disabled={isExporting}
+            className={`p-2.5 bg-white border-2 border-slate-100 rounded-xl transition-all ${
+              isExporting 
+                ? 'text-slate-300 cursor-not-allowed' 
+                : 'text-slate-400 hover:text-indigo-600 hover:border-indigo-100'
+            }`}
+            title={isExporting ? 'Exporting...' : 'Export to CSV'}
           >
-            <Download size={20} />
+            {isExporting ? (
+              <svg className="animate-spin" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="12" cy="12" r="10" strokeOpacity="0.25"/>
+                <path d="M12 2a10 10 0 0 1 10 10" strokeOpacity="0.75"/>
+              </svg>
+            ) : (
+              <Download size={20} />
+            )}
           </button>
         </div>
       </div>
@@ -547,7 +666,7 @@ const HistoryLog: React.FC<HistoryLogProps> = ({
           {searchQuery && (
             <span className="inline-flex items-center gap-1 px-2 py-1 bg-indigo-100 text-indigo-600 rounded-lg text-xs font-bold">
               Search: "{searchQuery}"
-              <button onClick={() => setSearchQuery('')} className="hover:text-indigo-800">×</button>
+              <button onClick={() => { setSearchInput(''); setSearchQuery(''); }} className="hover:text-indigo-800">×</button>
             </span>
           )}
           <button
@@ -673,8 +792,14 @@ const HistoryLog: React.FC<HistoryLogProps> = ({
                             )}
                             {onDeleteTransaction && (
                               <button 
-                                onClick={() => {
-                                  if (confirm('Delete this entry? This will reverse the stock change.')) {
+                                onClick={async () => {
+                                  const confirmed = await confirm({
+                                    title: 'Delete Entry',
+                                    message: 'Delete this entry? This will reverse the stock change.',
+                                    confirmText: 'Delete',
+                                    variant: 'danger'
+                                  });
+                                  if (confirmed) {
                                     onDeleteTransaction(tx.id);
                                   }
                                 }}

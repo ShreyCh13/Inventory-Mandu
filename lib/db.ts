@@ -5,10 +5,16 @@ import {
   dbToUser, dbToCategory, dbToContractor, dbToItem, dbToTransaction
 } from './database.types';
 
-type PendingEntity = 'users' | 'categories' | 'contractors' | 'items' | 'transactions' | 'settings';
-type PendingAction = 'create' | 'update' | 'delete' | 'upsert';
+// Generate idempotency key for create operations
+// Uses timestamp + random to ensure uniqueness across clients
+const generateIdempotencyKey = (): string => {
+  return `${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
+};
 
-interface PendingOperation {
+export type PendingEntity = 'users' | 'categories' | 'contractors' | 'items' | 'transactions' | 'settings';
+export type PendingAction = 'create' | 'update' | 'delete' | 'upsert';
+
+export interface PendingOperation {
   id: string;
   entity: PendingEntity;
   action: PendingAction;
@@ -17,6 +23,7 @@ interface PendingOperation {
   expectedUpdatedAt?: number;
   status?: 'pending' | 'conflict' | 'error';
   error?: string;
+  retryCount?: number;
 }
 
 const CACHE_KEYS = {
@@ -32,6 +39,78 @@ const CACHE_KEYS = {
   guardOverride: 'qs_guard_override'
 } as const;
 
+// Retry configuration
+const RETRY_CONFIG = {
+  maxRetries: 3,
+  baseDelayMs: 1000,
+  maxDelayMs: 10000,
+};
+
+// Check if an error is transient (should be retried)
+const isTransientError = (error: unknown): boolean => {
+  const errorStr = String(error).toLowerCase();
+  return (
+    errorStr.includes('network') ||
+    errorStr.includes('timeout') ||
+    errorStr.includes('fetch') ||
+    errorStr.includes('econnrefused') ||
+    errorStr.includes('enotfound') ||
+    errorStr.includes('socket') ||
+    errorStr.includes('aborted') ||
+    errorStr.includes('502') ||
+    errorStr.includes('503') ||
+    errorStr.includes('504')
+  );
+};
+
+// Exponential backoff with jitter
+const getBackoffDelay = (attempt: number): number => {
+  const delay = Math.min(
+    RETRY_CONFIG.baseDelayMs * Math.pow(2, attempt),
+    RETRY_CONFIG.maxDelayMs
+  );
+  // Add jitter (0-25% of delay) to prevent thundering herd
+  const jitter = Math.random() * 0.25 * delay;
+  return delay + jitter;
+};
+
+// Sleep helper
+const sleep = (ms: number): Promise<void> => 
+  new Promise(resolve => setTimeout(resolve, ms));
+
+// Retry wrapper for async operations
+async function withRetry<T>(
+  operation: () => Promise<T>,
+  operationName: string = 'operation'
+): Promise<T> {
+  let lastError: unknown;
+  
+  for (let attempt = 0; attempt <= RETRY_CONFIG.maxRetries; attempt++) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+      
+      // Don't retry non-transient errors
+      if (!isTransientError(error)) {
+        throw error;
+      }
+      
+      // Don't retry after max attempts
+      if (attempt >= RETRY_CONFIG.maxRetries) {
+        console.error(`${operationName} failed after ${RETRY_CONFIG.maxRetries + 1} attempts:`, error);
+        throw error;
+      }
+      
+      const delay = getBackoffDelay(attempt);
+      console.warn(`${operationName} failed (attempt ${attempt + 1}), retrying in ${Math.round(delay)}ms...`, error);
+      await sleep(delay);
+    }
+  }
+  
+  throw lastError;
+}
+
 const readCache = <T>(key: string, fallback: T): T => {
   try {
     const raw = localStorage.getItem(key);
@@ -41,12 +120,149 @@ const readCache = <T>(key: string, fallback: T): T => {
   }
 };
 
-const writeCache = <T>(key: string, value: T) => {
+const writeCache = <T>(key: string, value: T): boolean => {
   try {
+    // Proactive cleanup if storage is getting full
+    const usage = getStorageUsage();
+    if (usage.percentUsed > 80) {
+      console.warn(`Storage at ${usage.percentUsed}%, running proactive cleanup...`);
+      cleanupOldCacheData();
+    }
+    
     localStorage.setItem(key, JSON.stringify(value));
-  } catch {
-    // Ignore cache write errors
+    return true;
+  } catch (error) {
+    // Handle QuotaExceededError
+    if (error instanceof DOMException && error.name === 'QuotaExceededError') {
+      console.warn('Storage quota exceeded, attempting cleanup...');
+      cleanupOldCacheData();
+      // Try once more after cleanup
+      try {
+        localStorage.setItem(key, JSON.stringify(value));
+        return true;
+      } catch {
+        console.error('Storage still full after cleanup - DATA MAY BE LOST');
+        // Return false to indicate failure - caller should handle this
+        return false;
+      }
+    }
+    return false;
   }
+};
+
+// ============ STORAGE MANAGEMENT ============
+
+interface StorageInfo {
+  used: number;
+  total: number;
+  percentUsed: number;
+  isNearLimit: boolean;
+}
+
+// Estimate localStorage usage
+export const getStorageUsage = (): StorageInfo => {
+  let totalBytes = 0;
+  
+  try {
+    for (const key in localStorage) {
+      if (localStorage.hasOwnProperty(key)) {
+        totalBytes += localStorage.getItem(key)?.length || 0;
+      }
+    }
+  } catch {
+    // Ignore errors during measurement
+  }
+  
+  // localStorage limit is typically 5-10MB, assume 5MB to be safe
+  const estimatedLimit = 5 * 1024 * 1024; // 5MB in bytes
+  const percentUsed = (totalBytes / estimatedLimit) * 100;
+  
+  return {
+    used: totalBytes,
+    total: estimatedLimit,
+    percentUsed: Math.round(percentUsed * 10) / 10,
+    isNearLimit: percentUsed > 80
+  };
+};
+
+// Check if we're in development mode
+const isDev = typeof import.meta !== 'undefined' && import.meta.env?.DEV;
+
+// Clean up old cached data to free space - more aggressive cleanup
+export const cleanupOldCacheData = (): void => {
+  if (isDev) console.log('Running cache cleanup...');
+  const usage = getStorageUsage();
+  if (isDev) console.log(`Current storage: ${(usage.used / 1024 / 1024).toFixed(2)}MB (${usage.percentUsed}%)`);
+  
+  // Aggressive cleanup based on storage usage
+  const daysToKeep = usage.percentUsed > 90 ? 7 : usage.percentUsed > 70 ? 14 : 30;
+  const cutoffTime = Date.now() - (daysToKeep * 24 * 60 * 60 * 1000);
+  
+  // Clean up transactions - keep only recent ones
+  const transactions = readCache<Transaction[]>(CACHE_KEYS.transactions, []);
+  const recentTransactions = transactions.filter(t => t.timestamp > cutoffTime);
+  
+  if (recentTransactions.length < transactions.length) {
+    const removed = transactions.length - recentTransactions.length;
+    if (isDev) console.log(`Removing ${removed} transactions older than ${daysToKeep} days`);
+    // Use localStorage directly to avoid recursive cleanup check
+    try {
+      localStorage.setItem(CACHE_KEYS.transactions, JSON.stringify(recentTransactions));
+    } catch {
+      // If still failing, keep only last 500 transactions
+      console.warn('Still full, keeping only last 500 transactions');
+      const last500 = transactions
+        .sort((a, b) => b.timestamp - a.timestamp)
+        .slice(0, 500);
+      localStorage.setItem(CACHE_KEYS.transactions, JSON.stringify(last500));
+    }
+  }
+  
+  // Clear any temporary or debug data
+  try {
+    // Remove any keys that aren't our known cache keys
+    const knownKeys = new Set(Object.values(CACHE_KEYS));
+    const keysToRemove: string[] = [];
+    
+    for (const key in localStorage) {
+      if (key.startsWith('qs_') && !knownKeys.has(key)) {
+        keysToRemove.push(key);
+      }
+    }
+    
+    keysToRemove.forEach(key => {
+      if (isDev) console.log(`Removing unknown cache key: ${key}`);
+      localStorage.removeItem(key);
+    });
+  } catch {
+    // Ignore cleanup errors
+  }
+  
+  const newUsage = getStorageUsage();
+  if (isDev) console.log(`After cleanup: ${(newUsage.used / 1024 / 1024).toFixed(2)}MB (${newUsage.percentUsed}%)`);
+};
+
+// Check storage and warn if near limit
+export const checkStorageHealth = (): { healthy: boolean; message?: string; usage: StorageInfo } => {
+  const usage = getStorageUsage();
+  
+  if (usage.percentUsed > 95) {
+    return {
+      healthy: false,
+      message: 'Storage is critically full. Some data may not be saved.',
+      usage
+    };
+  }
+  
+  if (usage.percentUsed > 80) {
+    return {
+      healthy: true,
+      message: 'Storage is getting full. Old data will be cleaned up automatically.',
+      usage
+    };
+  }
+  
+  return { healthy: true, usage };
 };
 
 const isOnline = (): boolean => {
@@ -57,8 +273,12 @@ const getPendingOps = (): PendingOperation[] => {
   return readCache<PendingOperation[]>(CACHE_KEYS.pendingOps, []);
 };
 
-const setPendingOps = (ops: PendingOperation[]) => {
-  writeCache(CACHE_KEYS.pendingOps, ops);
+const setPendingOps = (ops: PendingOperation[]): boolean => {
+  const success = writeCache(CACHE_KEYS.pendingOps, ops);
+  if (!success) {
+    notifyStorageWarning('Warning: Could not save pending operations. Storage may be full.');
+  }
+  return success;
 };
 
 const updatePendingOp = (id: string, updates: Partial<PendingOperation>) => {
@@ -67,9 +287,44 @@ const updatePendingOp = (id: string, updates: Partial<PendingOperation>) => {
   setPendingOps(updated);
 };
 
+// Maximum pending operations - increased for extended offline periods
+// With 20 users, each needs ~100 ops/day for extended offline
+const MAX_PENDING_OPS = 2000;
+
+// Default query limits to prevent memory exhaustion
+const DEFAULT_LIMITS = {
+  transactions: 1000,  // Default limit when no limit specified
+  items: 5000,         // Reasonable item limit
+  users: 500,          // Max users
+  categories: 200,     // Max categories
+  contractors: 500     // Max contractors
+} as const;
+
+// Storage warning callback - set from App.tsx to show UI warnings
+let storageWarningCallback: ((message: string) => void) | null = null;
+
+export const setStorageWarningCallback = (callback: ((message: string) => void) | null) => {
+  storageWarningCallback = callback;
+};
+
+const notifyStorageWarning = (message: string) => {
+  console.warn(message);
+  if (storageWarningCallback) {
+    storageWarningCallback(message);
+  }
+};
+
 const enqueueOp = (op: PendingOperation) => {
   const ops = getPendingOps();
-  setPendingOps([...ops, { ...op, status: 'pending' }]);
+  if (ops.length >= MAX_PENDING_OPS) {
+    console.error('Too many pending operations. Please sync when online.');
+    throw new Error(`Pending operations limit reached (${MAX_PENDING_OPS}). Please connect to the internet to sync your changes.`);
+  }
+  const success = writeCache(CACHE_KEYS.pendingOps, [...ops, { ...op, status: 'pending' }]);
+  if (!success) {
+    notifyStorageWarning('Storage is full! Your operation may not be saved. Please sync when online.');
+    throw new Error('Storage full - operation could not be queued. Please connect to the internet to sync.');
+  }
 };
 
 const mergeById = <T extends { id: string }>(existing: T[], incoming: T[]): T[] => {
@@ -119,103 +374,155 @@ const fetchUpdatedAt = async (entity: PendingEntity, id: string): Promise<string
   return (data as { updated_at?: string } | null)?.updated_at || null;
 };
 
-export const processPendingOps = async (): Promise<void> => {
-  if (!isSupabaseConfigured() || !isOnline()) return;
+// Process a single operation - returns true if successful
+const processOperation = async (op: PendingOperation): Promise<boolean> => {
+  const tableMap: Record<PendingEntity, string> = {
+    users: 'users',
+    categories: 'categories',
+    contractors: 'contractors',
+    items: 'items',
+    transactions: 'transactions',
+    settings: 'app_settings'
+  };
+
+  const table = tableMap[op.entity];
+  if (!table) return false;
+
+  if (op.entity === 'settings' && op.action === 'upsert') {
+    const { error } = await supabase.from('app_settings').upsert(op.payload as never);
+    if (error) throw error;
+    return true;
+  }
+
+  if (op.action === 'create') {
+    const { error } = await supabase.from(table).insert(op.payload as never);
+    if (error) throw error;
+  } else if (op.action === 'update') {
+    const { error } = await supabase.from(table).update(op.payload as never).eq('id', op.payload.id as string);
+    if (error) throw error;
+  } else if (op.action === 'delete') {
+    const { error } = await supabase.from(table).delete().eq('id', op.payload.id as string);
+    if (error) throw error;
+  }
+
+  return true;
+};
+
+// Maximum retries for transient errors
+const MAX_RETRIES = 3;
+
+export const processPendingOps = async (): Promise<{ processed: number; failed: number; conflicts: number }> => {
+  const result = { processed: 0, failed: 0, conflicts: 0 };
+  
+  if (!isSupabaseConfigured() || !isOnline()) return result;
 
   const ops = getPendingOps();
-  if (ops.length === 0) return;
+  if (ops.length === 0) return result;
+
+  const successfulIds: string[] = [];
 
   for (const op of ops) {
+    // Skip already conflicted operations (require manual resolution)
     if (op.status === 'conflict') {
-      console.warn('Pending conflict detected. Manual review required.');
-      break;
+      result.conflicts++;
+      continue;
     }
 
+    // Check for conflicts on update/delete operations
     if (op.action === 'update' || op.action === 'delete') {
-      const currentUpdatedAt = await fetchUpdatedAt(op.entity, op.payload.id as string);
-      if (!currentUpdatedAt || (op.expectedUpdatedAt && new Date(currentUpdatedAt).getTime() !== op.expectedUpdatedAt)) {
-        updatePendingOp(op.id, { status: 'conflict', error: 'Conflict detected. Record has changed or is missing.' });
-        break;
+      try {
+        const currentUpdatedAt = await fetchUpdatedAt(op.entity, op.payload.id as string);
+        if (!currentUpdatedAt) {
+          // Record doesn't exist - mark for deletion if it was a delete, otherwise conflict
+          if (op.action === 'delete') {
+            // Already deleted, just remove from queue
+            successfulIds.push(op.id);
+            result.processed++;
+            continue;
+          } else {
+            updatePendingOp(op.id, { status: 'conflict', error: 'Record no longer exists.' });
+            result.conflicts++;
+            continue;
+          }
+        }
+        if (op.expectedUpdatedAt && new Date(currentUpdatedAt).getTime() !== op.expectedUpdatedAt) {
+          updatePendingOp(op.id, { status: 'conflict', error: 'Record has been modified by another user.' });
+          result.conflicts++;
+          continue;
+        }
+      } catch (fetchErr) {
+        // Network error checking conflict - skip for now, will retry later
+        console.warn('Error checking conflict for op:', op.id, fetchErr);
+        continue;
       }
     }
 
+    // Try to process the operation with retries for transient errors
+    const retryCount = (op as PendingOperation & { retryCount?: number }).retryCount || 0;
+    
     try {
-      if (op.entity === 'items') {
-        if (op.action === 'create') {
-          const { error } = await supabase.from('items').insert(op.payload as never);
-          if (error) throw error;
-        } else if (op.action === 'update') {
-          const { error } = await supabase.from('items').update(op.payload as never).eq('id', op.payload.id as string);
-          if (error) throw error;
-        } else if (op.action === 'delete') {
-          const { error } = await supabase.from('items').delete().eq('id', op.payload.id as string);
-          if (error) throw error;
-        }
-      }
-
-      if (op.entity === 'categories') {
-        if (op.action === 'create') {
-          const { error } = await supabase.from('categories').insert(op.payload as never);
-          if (error) throw error;
-        } else if (op.action === 'update') {
-          const { error } = await supabase.from('categories').update(op.payload as never).eq('id', op.payload.id as string);
-          if (error) throw error;
-        } else if (op.action === 'delete') {
-          const { error } = await supabase.from('categories').delete().eq('id', op.payload.id as string);
-          if (error) throw error;
-        }
-      }
-
-      if (op.entity === 'contractors') {
-        if (op.action === 'create') {
-          const { error } = await supabase.from('contractors').insert(op.payload as never);
-          if (error) throw error;
-        } else if (op.action === 'update') {
-          const { error } = await supabase.from('contractors').update(op.payload as never).eq('id', op.payload.id as string);
-          if (error) throw error;
-        } else if (op.action === 'delete') {
-          const { error } = await supabase.from('contractors').delete().eq('id', op.payload.id as string);
-          if (error) throw error;
-        }
-      }
-
-      if (op.entity === 'transactions') {
-        if (op.action === 'create') {
-          const { error } = await supabase.from('transactions').insert(op.payload as never);
-          if (error) throw error;
-        } else if (op.action === 'update') {
-          const { error } = await supabase.from('transactions').update(op.payload as never).eq('id', op.payload.id as string);
-          if (error) throw error;
-        } else if (op.action === 'delete') {
-          const { error } = await supabase.from('transactions').delete().eq('id', op.payload.id as string);
-          if (error) throw error;
-        }
-      }
-
-      if (op.entity === 'users') {
-        if (op.action === 'create') {
-          const { error } = await supabase.from('users').insert(op.payload as never);
-          if (error) throw error;
-        } else if (op.action === 'update') {
-          const { error } = await supabase.from('users').update(op.payload as never).eq('id', op.payload.id as string);
-          if (error) throw error;
-        } else if (op.action === 'delete') {
-          const { error } = await supabase.from('users').delete().eq('id', op.payload.id as string);
-          if (error) throw error;
-        }
-      }
-
-      if (op.entity === 'settings' && op.action === 'upsert') {
-        const { error } = await supabase.from('app_settings').upsert(op.payload as never);
-        if (error) throw error;
-      }
-
-      setPendingOps(getPendingOps().filter(item => item.id !== op.id));
+      await processOperation(op);
+      successfulIds.push(op.id);
+      result.processed++;
     } catch (err) {
-      updatePendingOp(op.id, { status: 'error', error: String(err) });
-      break;
+      const errorStr = String(err);
+      
+      // Check if this is a transient error that should be retried
+      const isTransient = errorStr.includes('network') || 
+                          errorStr.includes('timeout') || 
+                          errorStr.includes('fetch') ||
+                          errorStr.includes('ECONNREFUSED');
+      
+      if (isTransient && retryCount < MAX_RETRIES) {
+        // Increment retry count, will try again next time
+        updatePendingOp(op.id, { 
+          status: 'pending', 
+          error: `Retry ${retryCount + 1}/${MAX_RETRIES}: ${errorStr}` 
+        } as Partial<PendingOperation>);
+        // Store retry count (extends the type temporarily)
+        const ops = getPendingOps();
+        const updatedOps = ops.map(o => 
+          o.id === op.id ? { ...o, retryCount: retryCount + 1 } : o
+        );
+        setPendingOps(updatedOps as PendingOperation[]);
+      } else {
+        // Permanent error or max retries reached
+        updatePendingOp(op.id, { status: 'error', error: errorStr });
+        result.failed++;
+      }
+      
+      // Continue processing other operations (don't break!)
+      continue;
     }
   }
+
+  // Remove all successful operations
+  if (successfulIds.length > 0) {
+    const currentOps = getPendingOps();
+    setPendingOps(currentOps.filter(op => !successfulIds.includes(op.id)));
+  }
+
+  return result;
+};
+
+// Dismiss/clear a failed or conflicted operation
+export const dismissPendingOp = (opId: string): void => {
+  const ops = getPendingOps();
+  setPendingOps(ops.filter(op => op.id !== opId));
+};
+
+// Force retry a failed operation
+export const retryPendingOp = (opId: string): void => {
+  const ops = getPendingOps();
+  const updated = ops.map(op => 
+    op.id === opId ? { ...op, status: 'pending' as const, error: undefined, retryCount: 0 } : op
+  );
+  setPendingOps(updated as PendingOperation[]);
+};
+
+// Get detailed info about pending ops for admin view
+export const getPendingOpsDetailed = (): PendingOperation[] => {
+  return getPendingOps();
 };
 
 // ============ USERS ============
@@ -233,11 +540,12 @@ export const getUsers = async (): Promise<User[]> => {
   const { data, error } = await supabase
     .from('users')
     .select('*')
-    .order('created_at', { ascending: true });
+    .order('created_at', { ascending: true })
+    .limit(DEFAULT_LIMITS.users);
 
   if (error) {
     console.error('Error fetching users:', error);
-    return [];
+    return readCache<User[]>(CACHE_KEYS.users, []);
   }
 
   const users = (data || []).map(dbToUser);
@@ -425,11 +733,12 @@ export const getCategories = async (): Promise<Category[]> => {
   const { data, error } = await supabase
     .from('categories')
     .select('*')
-    .order('sort_order', { ascending: true });
+    .order('sort_order', { ascending: true })
+    .limit(DEFAULT_LIMITS.categories);
 
   if (error) {
     console.error('Error fetching categories:', error);
-    return [];
+    return readCache<Category[]>(CACHE_KEYS.categories, []);
   }
 
   const categories = (data || []).map(dbToCategory);
@@ -590,11 +899,12 @@ export const getContractors = async (): Promise<Contractor[]> => {
   const { data, error } = await supabase
     .from('contractors')
     .select('*')
-    .order('name', { ascending: true });
+    .order('name', { ascending: true })
+    .limit(DEFAULT_LIMITS.contractors);
 
   if (error) {
     console.error('Error fetching contractors:', error);
-    return [];
+    return readCache<Contractor[]>(CACHE_KEYS.contractors, []);
   }
 
   const contractors = (data || []).map(dbToContractor);
@@ -751,24 +1061,34 @@ export const getItems = async (): Promise<InventoryItem[]> => {
     return readCache<InventoryItem[]>(CACHE_KEYS.items, []);
   }
 
-  const { data, error } = await supabase
-    .from('items')
-    .select(`
-      *,
-      categories!inner (name)
-    `)
-    .order('name', { ascending: true });
+  try {
+    const { data, error } = await withRetry(
+      async () => {
+        const result = await supabase
+          .from('items')
+          .select(`
+            *,
+            categories!inner (name)
+          `)
+          .is('deleted_at', null)  // Filter out soft-deleted items
+          .order('name', { ascending: true })
+          .limit(DEFAULT_LIMITS.items);
+        if (result.error) throw result.error;
+        return result;
+      },
+      'getItems'
+    );
 
-  if (error) {
+    const items = (data || []).map((row: Record<string, unknown>) => 
+      dbToItem(row as never, ((row.categories as Record<string, unknown>)?.name as string) || 'General')
+    );
+    writeCache(CACHE_KEYS.items, items);
+    return items;
+  } catch (error) {
     console.error('Error fetching items:', error);
-    return [];
+    // Return cached data on failure
+    return readCache<InventoryItem[]>(CACHE_KEYS.items, []);
   }
-
-  const items = (data || []).map((row: Record<string, unknown>) => 
-    dbToItem(row as never, ((row.categories as Record<string, unknown>)?.name as string) || 'General')
-  );
-  writeCache(CACHE_KEYS.items, items);
-  return items;
 };
 
 export const createItem = async (item: Omit<InventoryItem, 'id'>): Promise<InventoryItem | null> => {
@@ -958,8 +1278,9 @@ export const deleteItem = async (id: string): Promise<boolean> => {
     const cachedItems = readCache<InventoryItem[]>(CACHE_KEYS.items, []);
     const current = cachedItems.find(i => i.id === id);
     writeCache(CACHE_KEYS.items, cachedItems.filter(i => i.id !== id));
-    const cachedTx = readCache<Transaction[]>(CACHE_KEYS.transactions, []);
-    writeCache(CACHE_KEYS.transactions, cachedTx.filter(t => t.itemId !== id));
+    // DON'T delete transactions from cache here - they might have pending sync operations
+    // The server's cascade delete will handle them when the item delete syncs
+    // Transactions will be cleaned up from cache after successful sync or on next full reload
     enqueueOp({
       id: generateId(),
       entity: 'items',
@@ -1093,6 +1414,9 @@ export const getTransactions = async (query?: TransactionQuery): Promise<Transac
     return transactions;
   }
 
+  // Apply default limit to prevent unbounded queries that crash browsers
+  const effectiveLimit = query?.limit || DEFAULT_LIMITS.transactions;
+  
   let queryBuilder = supabase
     .from('transactions')
     .select('*')
@@ -1127,11 +1451,12 @@ export const getTransactions = async (query?: TransactionQuery): Promise<Transac
     }
     queryBuilder = queryBuilder.or(orParts.join(','));
   }
-  if (query?.limit) {
-    queryBuilder = queryBuilder.limit(query.limit);
-  }
+  
+  // Always apply a limit to prevent memory issues
   if (query?.offset) {
-    queryBuilder = queryBuilder.range(query.offset, query.offset + (query?.limit || 50) - 1);
+    queryBuilder = queryBuilder.range(query.offset, query.offset + effectiveLimit - 1);
+  } else {
+    queryBuilder = queryBuilder.limit(effectiveLimit);
   }
 
   const { data, error } = await queryBuilder;
@@ -1202,16 +1527,146 @@ export const getTransactionCount = async (query?: TransactionQuery): Promise<num
   return count || 0;
 };
 
+// Get real-time stock for a single item (for verification before transactions)
+export const getItemStockRealtime = async (itemId: string): Promise<{ stock: number; wip: number } | null> => {
+  if (!isSupabaseConfigured() || !isOnline()) {
+    // Fall back to cached stock levels
+    const cached = readCache<Record<string, { stock: number; wip: number }>>(CACHE_KEYS.stock, {});
+    return cached[itemId] || null;
+  }
+
+  const { data, error } = await supabase
+    .from('stock_summary')
+    .select('current_quantity, wip_quantity')
+    .eq('item_id', itemId)
+    .single();
+
+  if (error || !data) {
+    return null;
+  }
+
+  return {
+    stock: (data as { current_quantity: number }).current_quantity || 0,
+    wip: (data as { wip_quantity: number }).wip_quantity || 0
+  };
+};
+
+// Error type for insufficient stock
+export class InsufficientStockError extends Error {
+  availableStock: number;
+  requestedQuantity: number;
+  
+  constructor(available: number, requested: number) {
+    super(`Insufficient stock: ${available} available, ${requested} requested`);
+    this.name = 'InsufficientStockError';
+    this.availableStock = available;
+    this.requestedQuantity = requested;
+  }
+}
+
 export const createTransaction = async (
-  tx: Omit<Transaction, 'id' | 'timestamp'>
+  tx: Omit<Transaction, 'id' | 'timestamp'>,
+  skipStockCheck: boolean = false
 ): Promise<Transaction | null> => {
   if (isSupabaseConfigured() && hasPendingConflicts()) {
     console.error('Sync conflicts detected. Resolve conflicts before creating transactions.');
     return null;
   }
 
+  // Validate transaction data
+  if (typeof tx.quantity !== 'number' || isNaN(tx.quantity)) {
+    throw new Error('Invalid quantity: must be a number');
+  }
+  if (tx.type !== 'WIP' && tx.quantity <= 0) {
+    throw new Error('Invalid quantity: must be positive for IN/OUT transactions');
+  }
+
   const id = generateId();
   const timestamp = Date.now();
+  const idempotencyKey = generateIdempotencyKey();
+
+  // For OUT transactions online, use server-side atomic validation
+  if (!skipStockCheck && tx.type === 'OUT' && isSupabaseConfigured() && isOnline()) {
+    try {
+      // Use server-side RPC for atomic stock validation and transaction creation
+      const { data, error } = await supabase.rpc('create_out_transaction_safe', {
+        p_id: id,
+        p_item_id: tx.itemId,
+        p_quantity: tx.quantity,
+        p_user_name: tx.user,
+        p_reason: tx.reason,
+        p_signature: tx.signature || null,
+        p_location: tx.location || null,
+        p_amount: tx.amount || null,
+        p_bill_number: tx.billNumber || null,
+        p_contractor_id: tx.contractorId || null,
+        p_created_by: tx.createdBy || null,
+        p_idempotency_key: idempotencyKey  // Pass idempotency key for duplicate prevention
+      });
+
+      if (error) {
+        console.error('Server RPC error:', error);
+        // Fall back to client-side check if RPC not available
+      } else if (data && data.length > 0) {
+        const result = data[0];
+        if (!result.success) {
+          // Check if it's a duplicate (idempotent response)
+          if (result.error_message?.includes('Duplicate request') && result.transaction_id) {
+            if (isDev) console.log('RPC returned existing transaction (idempotent)');
+            // Return existing transaction
+            const { data: existingData } = await supabase
+              .from('transactions')
+              .select('*')
+              .eq('id', result.transaction_id)
+              .single();
+            if (existingData) {
+              return dbToTransaction(existingData);
+            }
+          }
+          console.error(`Stock validation failed: ${result.available_stock} available`);
+          throw new InsufficientStockError(result.available_stock, tx.quantity);
+        }
+        // Transaction was created by RPC, return it
+        const txId = result.transaction_id || id;
+        const created: Transaction = {
+          id: txId,
+          itemId: tx.itemId,
+          type: tx.type,
+          quantity: tx.quantity,
+          user: tx.user,
+          reason: tx.reason,
+          timestamp,
+          signature: tx.signature,
+          location: tx.location,
+          amount: tx.amount,
+          billNumber: tx.billNumber,
+          contractorId: tx.contractorId,
+          createdBy: tx.createdBy,
+          updatedAt: timestamp
+        };
+        const cached = readCache<Transaction[]>(CACHE_KEYS.transactions, []);
+        writeCache(CACHE_KEYS.transactions, [created, ...cached]);
+        return created;
+      }
+    } catch (rpcError) {
+      // If it's an InsufficientStockError, rethrow it
+      if (rpcError instanceof InsufficientStockError) {
+        throw rpcError;
+      }
+      // Otherwise fall back to client-side validation
+      console.warn('RPC not available, falling back to client-side check');
+    }
+    
+    // Fallback: client-side verification
+    const currentStock = await getItemStockRealtime(tx.itemId);
+    if (currentStock) {
+      const availableStock = currentStock.stock;
+      if (availableStock < tx.quantity) {
+        console.error(`Stock verification failed: ${availableStock} available, ${tx.quantity} requested`);
+        throw new InsufficientStockError(availableStock, tx.quantity);
+      }
+    }
+  }
 
   if (!isSupabaseConfigured()) {
     const transactions = await getTransactions();
@@ -1221,9 +1676,38 @@ export const createTransaction = async (
   }
 
   if (!isOnline()) {
+    // Validate stock for offline OUT transactions using cached stock levels
+    if (!skipStockCheck && tx.type === 'OUT') {
+      const cachedStock = readCache<Record<string, { stock: number; wip: number }>>(CACHE_KEYS.stock, {});
+      const itemStock = cachedStock[tx.itemId];
+      if (itemStock) {
+        const availableStock = itemStock.stock;
+        if (availableStock < tx.quantity) {
+          console.error(`Offline stock validation failed: ${availableStock} available, ${tx.quantity} requested`);
+          throw new InsufficientStockError(availableStock, tx.quantity);
+        }
+      }
+    }
+    
     const newTx: Transaction = { ...tx, id, timestamp, updatedAt: Date.now() };
     const cached = readCache<Transaction[]>(CACHE_KEYS.transactions, []);
     writeCache(CACHE_KEYS.transactions, [newTx, ...cached]);
+    
+    // Update cached stock levels optimistically
+    if (tx.type !== 'WIP' || !skipStockCheck) {
+      const cachedStock = readCache<Record<string, { stock: number; wip: number }>>(CACHE_KEYS.stock, {});
+      if (cachedStock[tx.itemId]) {
+        if (tx.type === 'IN') {
+          cachedStock[tx.itemId].stock += tx.quantity;
+        } else if (tx.type === 'OUT') {
+          cachedStock[tx.itemId].stock -= tx.quantity;
+        } else if (tx.type === 'WIP') {
+          cachedStock[tx.itemId].wip += tx.quantity;
+        }
+        writeCache(CACHE_KEYS.stock, cachedStock);
+      }
+    }
+    
     enqueueOp({
       id: generateId(),
       entity: 'transactions',
@@ -1240,11 +1724,26 @@ export const createTransaction = async (
         amount: tx.amount || null,
         bill_number: tx.billNumber || null,
         contractor_id: tx.contractorId || null,
-        created_by: tx.createdBy || null
+        created_by: tx.createdBy || null,
+        idempotency_key: idempotencyKey  // Prevent duplicates on retry
       },
       createdAt: Date.now()
     });
     return newTx;
+  }
+
+  // Check idempotency key before insert to prevent duplicates on network retry
+  const { data: existingTx } = await supabase
+    .from('transactions')
+    .select('id, item_id, type, quantity, user_name, reason, created_at')
+    .eq('idempotency_key', idempotencyKey)
+    .maybeSingle();
+  
+  if (existingTx) {
+    // Transaction already exists with this idempotency key - return it (idempotent behavior)
+    if (isDev) console.log('Duplicate transaction detected via idempotency key, returning existing');
+    const existing = dbToTransaction(existingTx);
+    return existing;
   }
 
   const insertData = {
@@ -1259,7 +1758,8 @@ export const createTransaction = async (
     amount: tx.amount || null,
     bill_number: tx.billNumber || null,
     contractor_id: tx.contractorId || null,
-    created_by: tx.createdBy || null
+    created_by: tx.createdBy || null,
+    idempotency_key: idempotencyKey  // Prevent duplicates on retry
   };
 
   const { data, error } = await supabase
@@ -1490,27 +1990,35 @@ export const getStockLevels = async (): Promise<Record<string, { stock: number; 
     return readCache<Record<string, { stock: number; wip: number }>>(CACHE_KEYS.stock, {});
   }
 
-  // Use database aggregation for accurate stock calculation
-  const { data: stockData, error: stockError } = await supabase
-    .from('current_stock')
-    .select('id, current_quantity, wip_quantity');
+  try {
+    // Use stock_summary table for O(1) stock lookups (maintained by triggers)
+    const { data: stockData } = await withRetry(
+      async () => {
+        const result = await supabase
+          .from('stock_summary')
+          .select('item_id, current_quantity, wip_quantity');
+        if (result.error) throw result.error;
+        return result;
+      },
+      'getStockLevels'
+    );
 
-  if (stockError || !stockData) {
-    console.error('Error fetching stock levels:', stockError);
-    return {};
+    const levels: Record<string, { stock: number; wip: number }> = {};
+    
+    (stockData || []).forEach((row: { item_id: string; current_quantity: number; wip_quantity: number }) => {
+      levels[row.item_id] = {
+        stock: row.current_quantity || 0,
+        wip: row.wip_quantity || 0
+      };
+    });
+
+    writeCache(CACHE_KEYS.stock, levels);
+    return levels;
+  } catch (error) {
+    console.error('Error fetching stock levels:', error);
+    // Return cached data on failure
+    return readCache<Record<string, { stock: number; wip: number }>>(CACHE_KEYS.stock, {});
   }
-
-  const levels: Record<string, { stock: number; wip: number }> = {};
-  
-  stockData.forEach((row: { id: string; current_quantity: number; wip_quantity: number }) => {
-    levels[row.id] = {
-      stock: row.current_quantity || 0,
-      wip: row.wip_quantity || 0
-    };
-  });
-
-  writeCache(CACHE_KEYS.stock, levels);
-  return levels;
 };
 
 // Client-side calculation (for backward compatibility and offline mode)

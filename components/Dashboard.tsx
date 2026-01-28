@@ -1,6 +1,7 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { InventoryItem, Transaction, TransactionType, AuthSession, User, Contractor } from '../types';
 import { ArrowDown, ArrowUp, Timer, Package, History, HardHat, Plus } from './Icons';
+import { useConfirm } from './ConfirmDialog';
 
 interface DashboardProps {
   items: InventoryItem[];
@@ -17,6 +18,7 @@ interface DashboardProps {
 }
 
 const ITEMS_PER_PAGE = 50;
+const SEARCH_DEBOUNCE_MS = 300;
 
 const Dashboard: React.FC<DashboardProps> = ({ 
   items, 
@@ -31,10 +33,28 @@ const Dashboard: React.FC<DashboardProps> = ({
   onUpdateTransaction, 
   onDeleteTransaction 
 }) => {
-  const [filter, setFilter] = useState('');
+  const confirm = useConfirm();
+  const [filterInput, setFilterInput] = useState('');
+  const [filter, setFilter] = useState(''); // Debounced value
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [historyItemId, setHistoryItemId] = useState<string | null>(null);
   const [itemPage, setItemPage] = useState(0);
+  const [historyPage, setHistoryPage] = useState(0);
+  const HISTORY_PER_PAGE = 50;
+
+  const [isFiltering, setIsFiltering] = useState(false);
+
+  // Debounce the filter value with loading indicator
+  useEffect(() => {
+    if (filterInput !== filter) {
+      setIsFiltering(true);
+    }
+    const timer = setTimeout(() => {
+      setFilter(filterInput);
+      setIsFiltering(false);
+    }, SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [filterInput, filter]);
   
   // Edit modal state
   const [editingTx, setEditingTx] = useState<Transaction | null>(null);
@@ -50,7 +70,7 @@ const Dashboard: React.FC<DashboardProps> = ({
 
   const getContractor = (id?: string) => contractors.find(c => c.id === id);
 
-  const canEdit = (tx: Transaction) => session.user.role === 'admin';
+  const canEdit = () => session.user.role === 'admin';
 
   const openEditModal = (tx: Transaction) => {
     setEditingTx(tx);
@@ -73,13 +93,26 @@ const Dashboard: React.FC<DashboardProps> = ({
   };
 
   const itemHistory = useMemo(() => {
-    if (!historyItemId) return [];
-    return transactions
+    if (!historyItemId) return { items: [], total: 0, totalPages: 0 };
+    const filtered = transactions
       .filter(t => t.itemId === historyItemId)
       .sort((a, b) => b.timestamp - a.timestamp);
-  }, [transactions, historyItemId]);
+    
+    const total = filtered.length;
+    const totalPages = Math.ceil(total / HISTORY_PER_PAGE);
+    const start = historyPage * HISTORY_PER_PAGE;
+    const items = filtered.slice(start, start + HISTORY_PER_PAGE);
+    
+    return { items, total, totalPages };
+  }, [transactions, historyItemId, historyPage]);
 
   const historyItem = historyItemId ? items.find(i => i.id === historyItemId) : null;
+  
+  // Reset history page when item changes
+  const openHistory = (itemId: string) => {
+    setHistoryItemId(itemId);
+    setHistoryPage(0);
+  };
 
   const formatTime = (ts: number) => {
     return new Intl.DateTimeFormat('en-GB', { 
@@ -156,7 +189,7 @@ const Dashboard: React.FC<DashboardProps> = ({
   };
 
   const handleFilterChange = (value: string) => {
-    setFilter(value);
+    setFilterInput(value);
     setItemPage(0);
   };
 
@@ -168,13 +201,20 @@ const Dashboard: React.FC<DashboardProps> = ({
           type="text"
           placeholder="Search items..."
           className="w-full pl-10 pr-4 py-3 bg-white border-2 border-slate-100 rounded-xl focus:border-indigo-500 focus:outline-none shadow-sm text-sm font-bold placeholder:text-slate-300"
-          value={filter}
+          value={filterInput}
           onChange={(e) => handleFilterChange(e.target.value)}
         />
         <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
         </div>
-        {filter && (
+        {isFiltering ? (
+          <div className="absolute right-3 top-1/2 -translate-y-1/2">
+            <svg className="animate-spin text-indigo-500" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="12" cy="12" r="10" strokeOpacity="0.25"/>
+              <path d="M12 2a10 10 0 0 1 10 10" strokeOpacity="0.75"/>
+            </svg>
+          </div>
+        ) : filterInput && (
           <button 
             onClick={() => handleFilterChange('')}
             className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
@@ -283,7 +323,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                     <Timer size={16} />
                   </button>
                   <button 
-                    onClick={() => setHistoryItemId(item.id)}
+                    onClick={() => openHistory(item.id)}
                     className="w-9 h-9 bg-slate-100 text-slate-500 rounded-lg flex items-center justify-center active:scale-95 transition-all"
                     title="History"
                   >
@@ -377,16 +417,21 @@ const Dashboard: React.FC<DashboardProps> = ({
               );
             })()}
 
-            {/* Transaction History - Compact List */}
-            {itemHistory.length > 0 ? (
+            {/* Transaction History - Compact List with Pagination */}
+            {itemHistory.total > 0 ? (
               <div className="bg-white rounded-xl border border-slate-100 overflow-hidden">
-                <div className="p-3 bg-slate-50 border-b border-slate-100">
+                <div className="p-3 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                    {itemHistory.length} Transactions
+                    {itemHistory.total} Transactions
                   </p>
+                  {itemHistory.totalPages > 1 && (
+                    <p className="text-[10px] text-slate-400">
+                      Page {historyPage + 1} of {itemHistory.totalPages}
+                    </p>
+                  )}
                 </div>
-                <div className="divide-y divide-slate-100 max-h-[60vh] overflow-y-auto">
-                  {itemHistory.map(tx => (
+                <div className="divide-y divide-slate-100 max-h-[50vh] overflow-y-auto">
+                  {itemHistory.items.map(tx => (
                     <div key={tx.id} className={`p-3 ${tx.type === 'WIP' ? 'bg-amber-50/50' : ''}`}>
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex items-center gap-3 min-w-0">
@@ -422,7 +467,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                             </div>
                           </div>
                         </div>
-                        {canEdit(tx) && (
+                        {canEdit() && (
                           <div className="flex gap-1 shrink-0">
                             <button 
                               onClick={() => openEditModal(tx)}
@@ -431,8 +476,14 @@ const Dashboard: React.FC<DashboardProps> = ({
                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                             </button>
                             <button 
-                              onClick={() => {
-                                if (confirm('Delete this entry?')) onDeleteTransaction?.(tx.id);
+                              onClick={async () => {
+                                const confirmed = await confirm({
+                                  title: 'Delete Entry',
+                                  message: 'Are you sure you want to delete this entry? This will reverse the stock change.',
+                                  confirmText: 'Delete',
+                                  variant: 'danger'
+                                });
+                                if (confirmed) onDeleteTransaction?.(tx.id);
                               }}
                               className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded"
                             >
@@ -444,6 +495,29 @@ const Dashboard: React.FC<DashboardProps> = ({
                     </div>
                   ))}
                 </div>
+                
+                {/* Pagination Controls */}
+                {itemHistory.totalPages > 1 && (
+                  <div className="flex items-center justify-center gap-2 p-3 bg-slate-50 border-t border-slate-100">
+                    <button
+                      onClick={() => setHistoryPage(Math.max(0, historyPage - 1))}
+                      disabled={historyPage === 0}
+                      className="px-4 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-600 disabled:opacity-50"
+                    >
+                      Previous
+                    </button>
+                    <span className="text-xs font-bold text-slate-500 px-4">
+                      {historyPage + 1} / {itemHistory.totalPages}
+                    </span>
+                    <button
+                      onClick={() => setHistoryPage(Math.min(itemHistory.totalPages - 1, historyPage + 1))}
+                      disabled={historyPage >= itemHistory.totalPages - 1}
+                      className="px-4 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-600 disabled:opacity-50"
+                    >
+                      Next
+                    </button>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="py-12 text-center bg-white rounded-xl border border-slate-100">

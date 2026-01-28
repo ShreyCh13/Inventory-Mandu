@@ -1,13 +1,16 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { InventoryItem, Transaction, TransactionType, AppSettings, AuthSession, Category, User, Contractor } from './types';
-import { supabase, isSupabaseConfigured, subscribeToTable } from './lib/supabase';
+import { supabase, isSupabaseConfigured, subscribeToTableThrottled, RealtimePayload, ConnectionQuality, subscribeToConnectionState, startConnectionMonitoring, getConnectionState } from './lib/supabase';
 import * as db from './lib/db';
+import { InsufficientStockError, PendingOperation, setStorageWarningCallback, checkStorageHealth } from './lib/db';
+import { dbToItem, dbToTransaction, dbToCategory, dbToContractor } from './lib/database.types';
 import Dashboard from './components/Dashboard';
 import TransactionForm from './components/TransactionForm';
 import ItemManager from './components/ItemManager';
 import HistoryLog from './components/HistoryLog';
 import LoginPage from './components/LoginPage';
 import AdminPanel from './components/AdminPanel';
+import SyncConflictDialog from './components/SyncConflictDialog';
 import { Plus, Minus, Package, History, LayoutDashboard, Settings, User as UserIcon, LogOut } from './components/Icons';
 
 // Default categories - will be loaded from database
@@ -52,6 +55,8 @@ const App: React.FC = () => {
   
   const [isLoading, setIsLoading] = useState(true);
   const [isOnline, setIsOnline] = useState(true);
+  const [connectionQuality, setConnectionQuality] = useState<ConnectionQuality>('good');
+  const [connectionLatency, setConnectionLatency] = useState(0);
   const [lastSync, setLastSync] = useState<Date | null>(null);
   const [pendingSummary, setPendingSummary] = useState({ pending: 0, conflicts: 0 });
   const [isDataGuarded, setIsDataGuarded] = useState(false);
@@ -60,6 +65,17 @@ const App: React.FC = () => {
   const [showTransactionModal, setShowTransactionModal] = useState<{type: TransactionType, item?: InventoryItem} | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [stockError, setStockError] = useState<{ message: string; available: number } | null>(null);
+  
+  // Conflict resolution dialog state
+  const [showConflictDialog, setShowConflictDialog] = useState(false);
+  const [conflictedOps, setConflictedOps] = useState<PendingOperation[]>([]);
+  
+  // Session expiry warning state
+  const [showSessionWarning, setShowSessionWarning] = useState(false);
+  
+  // Storage warning state
+  const [storageWarning, setStorageWarning] = useState<string | null>(null);
 
   const subscriptionsRef = useRef<(() => void)[]>([]);
   const refreshPendingSummary = () => setPendingSummary(db.getPendingOpsSummary());
@@ -72,12 +88,12 @@ const App: React.FC = () => {
       }
       const [loadedItems, loadedTransactions, loadedCategories, loadedContractors, loadedSettings, loadedUsers, loadedStockLevels] = await Promise.all([
         db.getItems(),
-        db.getTransactions({ limit: 500 }), // Load recent 500 for display only
+        db.getTransactions({ limit: 1000 }), // Load recent 1000 for display (paginated in components)
         db.getCategories(),
         db.getContractors(),
         db.getSettings(),
         db.getUsers(),
-        db.getStockLevels() // Get accurate stock from ALL transactions
+        db.getStockLevels() // Get accurate stock from stock_summary table
       ]);
 
       setItems(loadedItems);
@@ -110,47 +126,147 @@ const App: React.FC = () => {
     loadData();
   }, [loadData]);
 
-  // Set up real-time subscriptions
+  // Set up real-time subscriptions with throttling
   useEffect(() => {
     if (!isSupabaseConfigured()) return;
 
-    // Subscribe to items changes
-    const itemsChannel = subscribeToTable<InventoryItem>('items', async (payload) => {
-      console.log('Items changed:', payload.eventType);
-      // Reload items to get fresh data with category names
-      const freshItems = await db.getItems();
-      setItems(freshItems);
-      setLastSync(new Date());
-    });
-
-    // Subscribe to transactions changes
-    const transactionsChannel = subscribeToTable<Transaction>('transactions', async (payload) => {
-      console.log('Transactions changed:', payload.eventType);
-      // Reload recent transactions and stock levels
-      const [freshTransactions, freshStockLevels] = await Promise.all([
-        db.getTransactions({ limit: 500 }),
-        db.getStockLevels()
-      ]);
-      setTransactions(freshTransactions);
+    // Subscribe to items changes - incremental updates to avoid full reloads
+    const itemsChannel = subscribeToTableThrottled<Record<string, unknown>>('items', async (payloads) => {
+      if (import.meta.env.DEV) console.log('Items batch update:', payloads.length, 'changes');
+      
+      // Check if we need to reload (only for inserts that need category lookup)
+      const hasInserts = payloads.some(p => p.eventType === 'INSERT');
+      
+      if (hasInserts) {
+        // For inserts, we need the category name which requires a join
+        // So reload items, but this is rare compared to updates
+        const freshItems = await db.getItems();
+        setItems(freshItems);
+      } else {
+        // For updates and deletes, do incremental changes
+        setItems(prev => {
+          const updated = [...prev];
+          payloads.forEach(p => {
+            if (p.eventType === 'UPDATE' && p.new) {
+              const newData = p.new as Record<string, unknown>;
+              const idx = updated.findIndex(i => i.id === newData.id);
+              if (idx >= 0) {
+                // Preserve category name since payload doesn't include it
+                updated[idx] = {
+                  ...updated[idx],
+                  name: (newData.name as string) || updated[idx].name,
+                  unit: (newData.unit as string) || updated[idx].unit,
+                  minStock: (newData.min_stock as number) ?? updated[idx].minStock,
+                  description: newData.description as string | undefined,
+                  categoryId: (newData.category_id as string) || updated[idx].categoryId
+                };
+              }
+            } else if (p.eventType === 'DELETE' && p.old) {
+              const oldData = p.old as Record<string, unknown>;
+              const idx = updated.findIndex(i => i.id === oldData.id);
+              if (idx >= 0) updated.splice(idx, 1);
+            }
+          });
+          return updated;
+        });
+      }
+      
+      // Always refresh stock levels (fast O(1) from stock_summary table)
+      const freshStockLevels = await db.getStockLevels();
       setStockLevels(freshStockLevels);
       setLastSync(new Date());
-    });
+    }, 2000); // 2 second throttle
 
-    // Subscribe to categories changes
-    const categoriesChannel = subscribeToTable<Category>('categories', async () => {
-      console.log('Categories changed');
+    // Subscribe to transactions changes - throttled with smart reload
+    const transactionsChannel = subscribeToTableThrottled<Record<string, unknown>>('transactions', async (payloads) => {
+      if (import.meta.env.DEV) console.log('Transactions batch update:', payloads.length, 'changes');
+      
+      // Always reload stock levels first (instant from stock_summary table)
+      const freshStockLevels = await db.getStockLevels();
+      setStockLevels(freshStockLevels);
+      
+      // For transactions, do incremental updates when possible
+      const hasInserts = payloads.some(p => p.eventType === 'INSERT');
+      const hasDeletes = payloads.some(p => p.eventType === 'DELETE');
+      
+      if (hasInserts) {
+        // For inserts, prepend new transactions to the list
+        const newTxs: Transaction[] = [];
+        payloads.forEach(p => {
+          if (p.eventType === 'INSERT' && p.new) {
+            try {
+              newTxs.push(dbToTransaction(p.new as never));
+            } catch {
+              // Skip if conversion fails
+            }
+          }
+        });
+        if (newTxs.length > 0) {
+          setTransactions(prev => {
+            // Add new transactions at the beginning, avoid duplicates
+            const existingIds = new Set(prev.map(t => t.id));
+            const uniqueNew = newTxs.filter(t => !existingIds.has(t.id));
+            // Sort by timestamp descending and keep recent 1000 (pagination handles display)
+            return [...uniqueNew, ...prev]
+              .sort((a, b) => b.timestamp - a.timestamp)
+              .slice(0, 1000);
+          });
+        }
+      }
+      
+      if (hasDeletes) {
+        // For deletes, remove from the list
+        const deletedIds = new Set<string>();
+        payloads.forEach(p => {
+          if (p.eventType === 'DELETE' && p.old) {
+            const oldData = p.old as { id?: string };
+            if (oldData.id) deletedIds.add(oldData.id);
+          }
+        });
+        if (deletedIds.size > 0) {
+          setTransactions(prev => prev.filter(t => !deletedIds.has(t.id)));
+        }
+      }
+      
+      // For updates, apply them in place
+      const updates = payloads.filter(p => p.eventType === 'UPDATE' && p.new);
+      if (updates.length > 0) {
+        setTransactions(prev => {
+          const updated = [...prev];
+          updates.forEach(p => {
+            const idx = updated.findIndex(t => t.id === (p.new as { id?: string })?.id);
+            if (idx >= 0) {
+              try {
+                updated[idx] = dbToTransaction(p.new as never);
+              } catch {
+                // If conversion fails, leave as is
+              }
+            }
+          });
+          return updated;
+        });
+      }
+      
+      setLastSync(new Date());
+    }, 2000); // 2 second throttle
+
+    // Subscribe to categories changes - throttled (rare changes)
+    const categoriesChannel = subscribeToTableThrottled<Record<string, unknown>>('categories', async (payloads) => {
+      if (import.meta.env.DEV) console.log('Categories batch update:', payloads.length, 'changes');
+      // Categories change rarely, full reload is acceptable
       const freshCategories = await db.getCategories();
       setCategories(freshCategories.map(c => c.name));
       setLastSync(new Date());
-    });
+    }, 3000); // 3 second throttle
 
-    // Subscribe to contractors changes
-    const contractorsChannel = subscribeToTable<Contractor>('contractors', async () => {
-      console.log('Contractors changed');
+    // Subscribe to contractors changes - throttled (rare changes)
+    const contractorsChannel = subscribeToTableThrottled<Record<string, unknown>>('contractors', async (payloads) => {
+      if (import.meta.env.DEV) console.log('Contractors batch update:', payloads.length, 'changes');
+      // Contractors change rarely, full reload is acceptable
       const freshContractors = await db.getContractors();
       setContractors(freshContractors);
       setLastSync(new Date());
-    });
+    }, 3000); // 3 second throttle
 
     // Store cleanup functions
     subscriptionsRef.current = [
@@ -165,7 +281,7 @@ const App: React.FC = () => {
     };
   }, []);
 
-  // Connection status monitoring
+  // Connection status and quality monitoring
   useEffect(() => {
     const handleOnline = async () => {
       setIsOnline(true);
@@ -178,11 +294,58 @@ const App: React.FC = () => {
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
 
+    // Start connection quality monitoring
+    startConnectionMonitoring(30000); // Check every 30 seconds
+    
+    // Subscribe to connection state changes
+    const unsubscribe = subscribeToConnectionState((state) => {
+      setIsOnline(state.isOnline);
+      setConnectionQuality(state.quality);
+      setConnectionLatency(state.latencyMs);
+    });
+
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
+      unsubscribe();
     };
   }, []);
+
+  // Storage warning callback and periodic sync
+  useEffect(() => {
+    // Set up storage warning callback
+    setStorageWarningCallback((message) => {
+      setStorageWarning(message);
+      // Auto-dismiss after 10 seconds
+      setTimeout(() => setStorageWarning(null), 10000);
+    });
+
+    // Check storage health on mount
+    const health = checkStorageHealth();
+    if (!health.healthy || health.message) {
+      setStorageWarning(health.message || null);
+    }
+
+    // Periodic sync check every 5 minutes when online
+    const syncInterval = setInterval(async () => {
+      if (isOnline && isSupabaseConfigured()) {
+        const result = await db.processPendingOps();
+        if (result.processed > 0 || result.conflicts > 0) {
+          setPendingSummary(db.getPendingOpsSummary());
+        }
+        // Check storage health periodically
+        const health = checkStorageHealth();
+        if (!health.healthy) {
+          setStorageWarning(health.message || 'Storage is getting full');
+        }
+      }
+    }, 5 * 60 * 1000); // 5 minutes
+
+    return () => {
+      setStorageWarningCallback(null);
+      clearInterval(syncInterval);
+    };
+  }, [isOnline]);
 
   const handleLogin = (newSession: AuthSession) => {
     setSession(newSession);
@@ -193,6 +356,45 @@ const App: React.FC = () => {
     setSession(null);
     localStorage.removeItem('qs_session');
     setShowUserMenu(false);
+  };
+
+  // Session expiry monitoring
+  useEffect(() => {
+    if (!session) {
+      setShowSessionWarning(false);
+      return;
+    }
+    
+    const SESSION_DURATION = 30 * 24 * 60 * 60 * 1000; // 30 days
+    const WARNING_THRESHOLD = 24 * 60 * 60 * 1000; // 24 hours before expiry
+    
+    const checkSession = () => {
+      const timeLeft = (session.loginAt + SESSION_DURATION) - Date.now();
+      
+      if (timeLeft <= 0) {
+        // Session expired
+        handleLogout();
+      } else if (timeLeft < WARNING_THRESHOLD) {
+        setShowSessionWarning(true);
+      }
+    };
+    
+    // Check immediately
+    checkSession();
+    
+    // Check every minute
+    const checkInterval = setInterval(checkSession, 60000);
+    
+    return () => clearInterval(checkInterval);
+  }, [session]);
+
+  const renewSession = () => {
+    if (session) {
+      const renewedSession = { ...session, loginAt: Date.now() };
+      setSession(renewedSession);
+      localStorage.setItem('qs_session', JSON.stringify(renewedSession));
+      setShowSessionWarning(false);
+    }
   };
 
   const syncToSheets = useCallback(async (tx: Transaction) => {
@@ -208,85 +410,127 @@ const App: React.FC = () => {
     t: Omit<Transaction, 'id' | 'timestamp'>, 
     newItem?: Omit<InventoryItem, 'id'>
   ) => {
+    // Clear any previous stock error
+    setStockError(null);
+    
     let finalItemId = t.itemId;
+    // Track WIP reduction for potential rollback
+    let wipReductionTxId: string | null = null;
+    let wipReductionTx: Transaction | null = null;
 
-    // Create new item if provided
-    if (newItem) {
-      const createdItem = await db.createItem({
-        ...newItem,
-        categoryId: '',
-        createdBy: session?.user.id || ''
-      });
-      if (createdItem) {
-        setItems(prev => [...prev, createdItem]);
-        finalItemId = createdItem.id;
-      }
-    }
-
-    // Smart WIP handling: When removing items (OUT), automatically reduce WIP first
-    if (t.type === 'OUT' && finalItemId) {
-      const itemWIP = stockLevels[finalItemId]?.wip || 0;
-      if (itemWIP > 0) {
-        // Calculate how much WIP to reduce (up to the quantity being removed)
-        const wipToReduce = Math.min(itemWIP, t.quantity);
-        
-        // Create a WIP reduction transaction (negative WIP)
-        const wipReductionTx = await db.createTransaction({
-          itemId: finalItemId,
-          type: 'WIP',
-          quantity: -wipToReduce, // Negative quantity reduces WIP
-          user: t.user,
-          reason: `Auto-reduced WIP: ${t.reason}`,
-          signature: t.signature,
-          location: t.location,
-          amount: t.amount ? (t.amount * (wipToReduce / t.quantity)) : undefined, // Proportional amount
-          billNumber: t.billNumber,
-          createdBy: t.createdBy
+    try {
+      // Create new item if provided
+      if (newItem) {
+        const createdItem = await db.createItem({
+          ...newItem,
+          categoryId: '',
+          createdBy: session?.user.id || ''
         });
+        if (createdItem) {
+          setItems(prev => [...prev, createdItem]);
+          finalItemId = createdItem.id;
+        }
+      }
 
-        if (wipReductionTx) {
-          setTransactions(prev => [wipReductionTx, ...prev]);
+      // Smart WIP handling: When removing items (OUT), automatically reduce WIP first
+      if (t.type === 'OUT' && finalItemId) {
+        const itemWIP = stockLevels[finalItemId]?.wip || 0;
+        if (itemWIP > 0) {
+          // Calculate how much WIP to reduce (up to the quantity being removed)
+          const wipToReduce = Math.min(itemWIP, t.quantity);
           
-          // If we reduced all WIP and there's still quantity left, continue with OUT
-          // Otherwise, we're done (all removal came from WIP)
-          if (wipToReduce < t.quantity) {
-            // Still need to remove the remaining quantity as OUT
-            // Create a new transaction object with reduced quantity
-            t = { ...t, quantity: t.quantity - wipToReduce };
-          } else {
-            // All quantity was from WIP, no need for OUT transaction
-            const updatedStockLevels = await db.getStockLevels();
-            setStockLevels(updatedStockLevels);
-            setShowTransactionModal(null);
+          // Create a WIP reduction transaction (negative WIP) - skip stock check for WIP
+          wipReductionTx = await db.createTransaction({
+            itemId: finalItemId,
+            type: 'WIP',
+            quantity: -wipToReduce, // Negative quantity reduces WIP
+            user: t.user,
+            reason: `Auto-reduced WIP: ${t.reason}`,
+            signature: t.signature,
+            location: t.location,
+            amount: t.amount ? (t.amount * (wipToReduce / t.quantity)) : undefined, // Proportional amount
+            billNumber: t.billNumber,
+            createdBy: t.createdBy
+          }, true); // skipStockCheck = true for WIP
+
+          if (wipReductionTx) {
+            wipReductionTxId = wipReductionTx.id; // Track for potential rollback
+            setTransactions(prev => [wipReductionTx!, ...prev]);
             
-            if (settings.googleSheetUrl) {
-              syncToSheets(wipReductionTx);
+            // If we reduced all WIP and there's still quantity left, continue with OUT
+            // Otherwise, we're done (all removal came from WIP)
+            if (wipToReduce < t.quantity) {
+              // Still need to remove the remaining quantity as OUT
+              // Create a new transaction object with reduced quantity
+              t = { ...t, quantity: t.quantity - wipToReduce };
+            } else {
+              // All quantity was from WIP, no need for OUT transaction
+              const updatedStockLevels = await db.getStockLevels();
+              setStockLevels(updatedStockLevels);
+              setShowTransactionModal(null);
+              
+              if (settings.googleSheetUrl) {
+                syncToSheets(wipReductionTx);
+              }
+              refreshPendingSummary();
+              return;
             }
-            refreshPendingSummary();
-            return;
           }
         }
       }
-    }
 
-    // Create the main transaction
-    const newTransaction = await db.createTransaction({
-      ...t,
-      itemId: finalItemId
-    });
+      // Create the main transaction
+      const newTransaction = await db.createTransaction({
+        ...t,
+        itemId: finalItemId
+      });
 
-    if (newTransaction) {
-      setTransactions(prev => [newTransaction, ...prev]);
-      // Update stock levels after new transaction
-      const updatedStockLevels = await db.getStockLevels();
-      setStockLevels(updatedStockLevels);
-      setShowTransactionModal(null);
+      if (newTransaction) {
+        setTransactions(prev => [newTransaction, ...prev]);
+        // Update stock levels after new transaction
+        const updatedStockLevels = await db.getStockLevels();
+        setStockLevels(updatedStockLevels);
+        setShowTransactionModal(null);
 
-      // Sync to Google Sheets
-      if (settings.googleSheetUrl) {
-        syncToSheets(newTransaction);
+        // Sync to Google Sheets
+        if (settings.googleSheetUrl) {
+          syncToSheets(newTransaction);
+          // Also sync WIP reduction if it was created
+          if (wipReductionTx) {
+            syncToSheets(wipReductionTx);
+          }
+        }
+        refreshPendingSummary();
       }
-      refreshPendingSummary();
+    } catch (error) {
+      // ROLLBACK: If we created a WIP reduction but the main transaction failed, roll it back
+      if (wipReductionTxId) {
+        console.warn('Rolling back WIP reduction due to transaction failure');
+        try {
+          await db.deleteTransaction(wipReductionTxId);
+          // Remove from UI state
+          setTransactions(prev => prev.filter(tx => tx.id !== wipReductionTxId));
+        } catch (rollbackError) {
+          console.error('Failed to rollback WIP reduction:', rollbackError);
+        }
+      }
+      
+      // Handle insufficient stock error
+      if (error instanceof InsufficientStockError) {
+        setStockError({
+          message: `Stock has changed! Only ${error.availableStock} units available now.`,
+          available: error.availableStock
+        });
+        // Refresh stock levels to show current state
+        const updatedStockLevels = await db.getStockLevels();
+        setStockLevels(updatedStockLevels);
+      } else {
+        console.error('Transaction error:', error);
+        setStockError({
+          message: 'Failed to create transaction. Please try again.',
+          available: 0
+        });
+      }
     }
   };
 
@@ -400,6 +644,42 @@ const App: React.FC = () => {
     setIsDataGuarded(false);
   };
 
+  // Conflict resolution handlers
+  const openConflictDialog = () => {
+    const conflicts = db.getPendingOpsDetailed().filter(op => op.status === 'conflict');
+    setConflictedOps(conflicts);
+    setShowConflictDialog(true);
+  };
+
+  const handleDismissConflict = async (opId: string) => {
+    await db.dismissPendingOp(opId);
+    setConflictedOps(prev => prev.filter(op => op.id !== opId));
+    refreshPendingSummary();
+    if (conflictedOps.length <= 1) {
+      setShowConflictDialog(false);
+    }
+  };
+
+  const handleRetryConflict = async (opId: string) => {
+    await db.retryPendingOp(opId);
+    refreshPendingSummary();
+    // Refresh the conflicts list
+    const updatedConflicts = db.getPendingOpsDetailed().filter(op => op.status === 'conflict');
+    setConflictedOps(updatedConflicts);
+    if (updatedConflicts.length === 0) {
+      setShowConflictDialog(false);
+    }
+  };
+
+  const handleDismissAllConflicts = async () => {
+    for (const op of conflictedOps) {
+      await db.dismissPendingOp(op.id);
+    }
+    setConflictedOps([]);
+    setShowConflictDialog(false);
+    refreshPendingSummary();
+  };
+
   // Show login page if not authenticated
   if (!session) {
     return <LoginPage onLogin={handleLogin} />;
@@ -467,40 +747,106 @@ const App: React.FC = () => {
           >
             <UserIcon size={28} />
           </button>
-          {showUserMenu && (
-            <div className="absolute bottom-full right-0 mb-2 md:left-full md:bottom-0 md:top-auto md:mb-0 md:ml-2 bg-white rounded-2xl shadow-2xl border border-slate-200 p-4 min-w-[200px] z-[100]">
-              <div className="pb-3 mb-3 border-b border-slate-100">
-                <p className="font-bold text-slate-900">{session.user.displayName}</p>
-                <p className="text-xs text-slate-500">@{session.user.username}</p>
-                <span className={`inline-block mt-2 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded-full ${session.user.role === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-slate-100 text-slate-600'}`}>
-                  {session.user.role}
-                </span>
-              </div>
-              <button 
-                onClick={handleLogout}
-                className="w-full flex items-center gap-3 px-3 py-2 text-red-600 hover:bg-red-50 rounded-xl transition-colors text-sm font-semibold"
-              >
-                <LogOut size={18} />
-                Sign Out
-              </button>
-            </div>
-          )}
         </div>
       </nav>
 
+      {/* User Menu Popup - Outside nav for better positioning */}
+      {showUserMenu && (
+        <>
+          {/* Backdrop to close menu */}
+          <div 
+            className="fixed inset-0 z-[90]" 
+            onClick={() => setShowUserMenu(false)}
+          />
+          <div className="fixed bottom-24 right-4 md:bottom-auto md:top-4 md:left-28 bg-white rounded-2xl shadow-2xl border border-slate-200 p-4 min-w-[200px] z-[100]">
+            <div className="pb-3 mb-3 border-b border-slate-100">
+              <p className="font-bold text-slate-900">{session.user.displayName}</p>
+              <p className="text-xs text-slate-500">@{session.user.username}</p>
+              <span className={`inline-block mt-2 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded-full ${session.user.role === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-slate-100 text-slate-600'}`}>
+                {session.user.role}
+              </span>
+            </div>
+            <button 
+              onClick={handleLogout}
+              className="w-full flex items-center gap-3 px-3 py-2 text-red-600 hover:bg-red-50 rounded-xl transition-colors text-sm font-semibold"
+            >
+              <LogOut size={18} />
+              Sign Out
+            </button>
+          </div>
+        </>
+      )}
+
       <main className="max-w-5xl mx-auto p-4 sm:p-6 md:p-12">
+        {/* Session Expiry Warning Banner */}
+        {showSessionWarning && (
+          <div className="mb-6 p-4 bg-amber-50 border-2 border-amber-200 rounded-2xl flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-amber-100 rounded-xl flex items-center justify-center shrink-0">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-amber-600">
+                  <circle cx="12" cy="12" r="10"/>
+                  <polyline points="12 6 12 12 16 14"/>
+                </svg>
+              </div>
+              <div>
+                <p className="font-bold text-amber-800">Session Expiring Soon</p>
+                <p className="text-sm text-amber-600">Your session will expire within 24 hours. Click Renew to stay logged in.</p>
+              </div>
+            </div>
+            <button
+              onClick={renewSession}
+              className="px-4 py-2 bg-amber-500 text-white rounded-xl font-bold hover:bg-amber-600 transition-colors shrink-0"
+            >
+              Renew
+            </button>
+          </div>
+        )}
+
+        {/* Storage Warning Banner */}
+        {storageWarning && (
+          <div className="mb-6 p-4 bg-red-50 border-2 border-red-200 rounded-2xl flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-red-100 rounded-xl flex items-center justify-center shrink-0">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-red-600">
+                  <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                  <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+                </svg>
+              </div>
+              <div>
+                <p className="font-bold text-red-800">Storage Warning</p>
+                <p className="text-sm text-red-600">{storageWarning}</p>
+              </div>
+            </div>
+            <button
+              onClick={() => setStorageWarning(null)}
+              className="px-4 py-2 bg-red-500 text-white rounded-xl font-bold hover:bg-red-600 transition-colors shrink-0"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+        
         <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-6 mb-8 sm:mb-12">
           <div>
             <div className="flex items-center gap-3 mb-1">
               <div className={`w-3 h-3 rounded-full ${
                 !isOnline ? 'bg-red-500' :
+                connectionQuality === 'poor' ? 'bg-red-400' :
+                connectionQuality === 'slow' ? 'bg-amber-500' :
                 isSyncing ? 'bg-indigo-500 animate-pulse' : 
                 'bg-emerald-500'
               }`}></div>
-              <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.2em] flex items-center gap-2">
+              <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.2em] flex items-center gap-2 flex-wrap">
                 {!isOnline ? 'Offline Mode' :
+                 connectionQuality === 'poor' ? 'Poor Connection' :
+                 connectionQuality === 'slow' ? 'Slow Connection' :
                  isSyncing ? 'Syncing...' : 
                  isSupabaseConfigured() ? 'Real-Time Sync Active' : 'Local Mode'}
+                {isOnline && connectionLatency > 0 && connectionQuality !== 'excellent' && (
+                  <span className={`${connectionQuality === 'poor' ? 'text-red-400' : connectionQuality === 'slow' ? 'text-amber-500' : 'text-slate-300'}`}>
+                    • {connectionLatency}ms
+                  </span>
+                )}
                 {lastSync && isOnline && (
                   <span className="text-slate-300">
                     • Updated {lastSync.toLocaleTimeString()}
@@ -512,9 +858,12 @@ const App: React.FC = () => {
                   </span>
                 )}
                 {pendingSummary.conflicts > 0 && (
-                  <span className="text-red-500">
-                    • Sync Conflict Detected
-                  </span>
+                  <button 
+                    onClick={openConflictDialog}
+                    className="text-red-500 hover:text-red-600 hover:underline transition-colors"
+                  >
+                    • {pendingSummary.conflicts} Conflict{pendingSummary.conflicts !== 1 ? 's' : ''} - Click to Resolve
+                  </button>
                 )}
               </p>
             </div>
@@ -556,7 +905,7 @@ const App: React.FC = () => {
             onDeleteTransaction={handleDeleteTransaction}
           />
         )}
-        {activeTab === 'items' && <ItemManager items={items} transactions={transactions} />}
+        {activeTab === 'items' && <ItemManager items={items} transactions={transactions} stockLevels={stockLevels} />}
         {activeTab === 'history' && (
           <HistoryLog 
             transactions={transactions} 
@@ -601,7 +950,8 @@ const App: React.FC = () => {
           contractors={contractors}
           session={session}
           stockLevels={stockLevels}
-          onClose={() => setShowTransactionModal(null)}
+          stockError={stockError}
+          onClose={() => { setShowTransactionModal(null); setStockError(null); }}
           onSubmit={addTransaction}
           onRefreshContractors={async () => {
             const fresh = await db.getContractors();
@@ -609,6 +959,16 @@ const App: React.FC = () => {
           }}
         />
       )}
+
+      {/* Sync Conflict Resolution Dialog */}
+      <SyncConflictDialog
+        isOpen={showConflictDialog}
+        conflicts={conflictedOps}
+        onDismiss={handleDismissConflict}
+        onRetry={handleRetryConflict}
+        onDismissAll={handleDismissAllConflicts}
+        onClose={() => setShowConflictDialog(false)}
+      />
     </div>
   );
 };

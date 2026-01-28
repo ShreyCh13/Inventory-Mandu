@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { User } from '../types';
 import { User as UserIcon, Plus, Trash, Eye, EyeOff, Shield } from './Icons';
+import { useConfirm } from './ConfirmDialog';
 import * as db from '../lib/db';
 
 interface UserManagerProps {
@@ -8,6 +9,7 @@ interface UserManagerProps {
 }
 
 const UserManager: React.FC<UserManagerProps> = ({ currentUserId }) => {
+  const confirm = useConfirm();
   const [users, setUsers] = useState<User[]>([]);
   const [showAddUser, setShowAddUser] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
@@ -118,11 +120,24 @@ const UserManager: React.FC<UserManagerProps> = ({ currentUserId }) => {
 
   const handleDelete = async (userId: string) => {
     if (userId === currentUserId) {
-      alert("You cannot delete your own account!");
+      await confirm({
+        title: 'Cannot Delete',
+        message: "You cannot delete your own account!",
+        confirmText: 'OK',
+        cancelText: 'Close',
+        variant: 'warning'
+      });
       return;
     }
 
-    if (confirm('Are you sure you want to delete this user? This action cannot be undone.')) {
+    const confirmed = await confirm({
+      title: 'Delete User',
+      message: 'Are you sure you want to delete this user? This action cannot be undone.',
+      confirmText: 'Delete',
+      variant: 'danger'
+    });
+    
+    if (confirmed) {
       const success = await db.deleteUser(userId);
       if (success) {
         setUsers(prev => prev.filter(u => u.id !== userId));

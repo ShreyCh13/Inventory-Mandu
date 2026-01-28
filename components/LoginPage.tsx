@@ -36,20 +36,31 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
   // Initialize default users if none exist
   useEffect(() => {
     const initUsers = async () => {
-      const users = await db.getUsers();
-      if (users.length === 0) {
-        const guardOverride = localStorage.getItem('qs_guard_override') === 'true';
-        if (isSupabaseConfigured() && db.hasCachedCloudData() && !guardOverride) {
-          setGuardBlocked(true);
-          setIsInitializing(false);
-          return;
+      try {
+        const users = await db.getUsers();
+        if (users.length === 0) {
+          const guardOverride = localStorage.getItem('qs_guard_override') === 'true';
+          if (isSupabaseConfigured() && db.hasCachedCloudData() && !guardOverride) {
+            setGuardBlocked(true);
+            setIsInitializing(false);
+            return;
+          }
+          // Seed default users
+          for (const user of DEFAULT_USERS) {
+            try {
+              await db.createUser(user);
+            } catch (userError) {
+              console.error('Failed to create default user:', userError);
+              // Continue with other users even if one fails
+            }
+          }
         }
-        // Seed default users
-        for (const user of DEFAULT_USERS) {
-          await db.createUser(user);
-        }
+      } catch (error) {
+        console.error('Error initializing users:', error);
+        setError('Failed to initialize. Please refresh the page.');
+      } finally {
+        setIsInitializing(false);
       }
-      setIsInitializing(false);
     };
     initUsers();
   }, []);
