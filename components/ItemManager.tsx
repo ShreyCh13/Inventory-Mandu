@@ -164,14 +164,14 @@ const ItemManager: React.FC<ItemManagerProps> = ({ items, transactions, stockLev
                   className="w-full flex items-center justify-between p-4 hover:bg-slate-50 transition-colors"
                 >
                   <div className="flex items-center gap-3">
-                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-white font-black text-lg ${
+                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-white font-black text-xl ${
                       isExpanded ? 'bg-indigo-600' : 'bg-slate-400'
                     }`}>
                       {cat.charAt(0).toUpperCase()}
                     </div>
                     <div className="text-left">
-                      <h3 className="font-black text-lg text-slate-900">{cat}</h3>
-                      <p className="text-xs text-slate-400 font-bold">
+                      <h3 className="font-black text-xl text-slate-900">{cat}</h3>
+                      <p className="text-sm text-slate-400 font-bold">
                         {categoryItems.length} item{categoryItems.length !== 1 ? 's' : ''}
                         {categoryStats[cat]?.lowStock > 0 && (
                           <span className="text-red-500 ml-2">• {categoryStats[cat].lowStock} low</span>
@@ -208,14 +208,14 @@ const ItemManager: React.FC<ItemManagerProps> = ({ items, transactions, stockLev
                         {/* Item Info */}
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
-                            <p className="font-bold text-sm text-slate-900 truncate">{item.name}</p>
+                            <p className="font-black text-base text-slate-900 truncate">{item.name}</p>
                             {item.wip > 0 && (
-                              <span className="shrink-0 inline-flex items-center gap-1 text-[9px] font-black text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded">
-                                <Timer size={10} /> WIP:{item.wip}
+                              <span className="shrink-0 inline-flex items-center gap-1 text-xs font-black text-amber-600 bg-amber-100 px-2 py-0.5 rounded">
+                                <Timer size={12} /> WIP:{item.wip}
                               </span>
                             )}
                           </div>
-                          <div className="flex items-center gap-2 text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                          <div className="flex items-center gap-2 text-xs text-slate-400 font-bold uppercase tracking-wider">
                             <span>{item.unit}</span>
                             {item.location && (
                               <>
@@ -228,14 +228,14 @@ const ItemManager: React.FC<ItemManagerProps> = ({ items, transactions, stockLev
 
                         {/* Stock */}
                         <div className="text-right shrink-0">
-                          <span className={`text-xl font-black tabular-nums ${
+                          <span className={`text-2xl font-black tabular-nums ${
                             item.stock <= 0 ? 'text-red-500' : 
                             item.stock <= item.minStock ? 'text-amber-500' : 
                             'text-emerald-600'
                           }`}>
                             {item.stock}
                           </span>
-                          <p className="text-[9px] text-slate-400 font-bold uppercase">stock</p>
+                          <p className="text-xs text-slate-400 font-bold uppercase">stock</p>
                         </div>
                       </div>
                     ))}

@@ -263,14 +263,14 @@ const Dashboard: React.FC<DashboardProps> = ({
                   className="w-full flex items-center justify-between p-4 hover:bg-slate-50 transition-colors"
                 >
                   <div className="flex items-center gap-3">
-                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-white font-black text-lg ${
+                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-white font-black text-xl ${
                       isExpanded ? 'bg-indigo-600' : 'bg-slate-400'
                     }`}>
                       {cat.charAt(0).toUpperCase()}
                     </div>
                     <div className="text-left">
-                      <h3 className="font-black text-lg text-slate-900">{cat}</h3>
-                      <p className="text-xs text-slate-400 font-bold">
+                      <h3 className="font-black text-xl text-slate-900">{cat}</h3>
+                      <p className="text-sm text-slate-400 font-bold">
                         {categoryItems.length} item{categoryItems.length !== 1 ? 's' : ''}
                       </p>
                     </div>
@@ -304,14 +304,14 @@ const Dashboard: React.FC<DashboardProps> = ({
                         {/* Item Info */}
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
-                            <h4 className="font-black text-sm text-slate-900 truncate">{item.name}</h4>
+                            <h4 className="font-black text-base text-slate-900 truncate">{item.name}</h4>
                             {item.wip > 0 && (
-                              <span className="shrink-0 text-[9px] font-black text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded">
+                              <span className="shrink-0 text-xs font-black text-amber-600 bg-amber-100 px-2 py-0.5 rounded">
                                 WIP:{item.wip}
                               </span>
                             )}
                           </div>
-                          <div className="flex items-center gap-2 text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                          <div className="flex items-center gap-2 text-xs text-slate-400 font-bold uppercase tracking-wider">
                             <span>{item.unit}</span>
                             {item.location && (
                               <>
@@ -324,12 +324,12 @@ const Dashboard: React.FC<DashboardProps> = ({
 
                         {/* Stock Display */}
                         <div className="text-right shrink-0 mr-2">
-                          <div className={`text-xl font-black tabular-nums leading-none ${
+                          <div className={`text-2xl font-black tabular-nums leading-none ${
                             item.net <= 0 ? 'text-red-500' : item.net < 10 ? 'text-amber-500' : 'text-slate-900'
                           }`}>
                             {item.net}
                           </div>
-                          <div className="text-[9px] text-slate-400 font-bold uppercase">stock</div>
+                          <div className="text-xs text-slate-400 font-bold uppercase">stock</div>
                         </div>
 
                         {/* Action Buttons */}
