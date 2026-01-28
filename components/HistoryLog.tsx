@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Transaction, InventoryItem, AuthSession, User, TransactionType } from '../types';
-import { ArrowDown, ArrowUp, Timer, Download, Plus } from './Icons';
+import { Transaction, InventoryItem, AuthSession, User, TransactionType, Contractor } from '../types';
+import { ArrowDown, ArrowUp, Timer, Download, Plus, HardHat } from './Icons';
 import * as db from '../lib/db';
 
 interface HistoryLogProps {

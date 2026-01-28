@@ -1014,10 +1014,12 @@ export const getTransactions = async (query?: TransactionQuery): Promise<Transac
       transactions = transactions.filter(t => t.itemId === query.itemId);
     }
     if (query?.startDate) {
-      transactions = transactions.filter(t => t.timestamp >= query.startDate!.getTime());
+      const start = query.startDate.getTime();
+      transactions = transactions.filter(t => t.timestamp >= start);
     }
     if (query?.endDate) {
-      transactions = transactions.filter(t => t.timestamp <= query.endDate!.getTime());
+      const end = query.endDate.getTime();
+      transactions = transactions.filter(t => t.timestamp <= end);
     }
     if (query?.type) {
       transactions = transactions.filter(t => t.type === query.type);
@@ -1056,10 +1058,12 @@ export const getTransactions = async (query?: TransactionQuery): Promise<Transac
       transactions = transactions.filter(t => t.itemId === query.itemId);
     }
     if (query?.startDate) {
-      transactions = transactions.filter(t => t.timestamp >= query.startDate.getTime());
+      const start = query.startDate.getTime();
+      transactions = transactions.filter(t => t.timestamp >= start);
     }
     if (query?.endDate) {
-      transactions = transactions.filter(t => t.timestamp <= query.endDate.getTime());
+      const end = query.endDate.getTime();
+      transactions = transactions.filter(t => t.timestamp <= end);
     }
     if (query?.type) {
       transactions = transactions.filter(t => t.type === query.type);

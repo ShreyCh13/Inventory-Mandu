@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
-import { InventoryItem, Transaction, TransactionType, AuthSession, User } from '../types';
-import { ArrowDown, ArrowUp, Timer, Package, History } from './Icons';
+import { InventoryItem, Transaction, TransactionType, AuthSession, User, Contractor } from '../types';
+import { ArrowDown, ArrowUp, Timer, Package, History, HardHat } from './Icons';
 
 interface DashboardProps {
   items: InventoryItem[];

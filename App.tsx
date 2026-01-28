@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { InventoryItem, Transaction, TransactionType, AppSettings, AuthSession, Category, User } from './types';
+import { InventoryItem, Transaction, TransactionType, AppSettings, AuthSession, Category, User, Contractor } from './types';
 import { supabase, isSupabaseConfigured, subscribeToTable } from './lib/supabase';
 import * as db from './lib/db';
 import Dashboard from './components/Dashboard';
@@ -573,6 +573,7 @@ const App: React.FC = () => {
             transactions={transactions}
             session={session}
             categories={categories}
+            contractors={contractors}
             users={users}
             stockLevels={stockLevels}
             onAction={(type, item) => setShowTransactionModal({ type, item })}
@@ -588,6 +589,7 @@ const App: React.FC = () => {
             items={items} 
             session={session}
             categories={categories}
+            contractors={contractors}
             users={users}
             onAddTransaction={addTransaction}
             onUpdateTransaction={handleUpdateTransaction} 
