@@ -25,6 +25,7 @@ const ContractorManager: React.FC<ContractorManagerProps> = ({
   const [error, setError] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [selectedContractorId, setSelectedContractorId] = useState<string | null>(null);
+  const [view, setView] = useState<'balance' | 'history'>('balance');
 
   const resetForm = () => {
     setName('');
@@ -270,39 +271,90 @@ const ContractorManager: React.FC<ContractorManagerProps> = ({
                   <h3 className="text-xl font-black text-slate-900">
                     {contractors.find(c => c.id === selectedContractorId)?.name}
                   </h3>
+                  <div className="flex bg-slate-100 p-1 rounded-xl">
+                    <button
+                      onClick={() => setView('balance')}
+                      className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all ${
+                        view === 'balance' ? 'bg-white shadow-sm text-indigo-600' : 'text-slate-400'
+                      }`}
+                    >
+                      Balance
+                    </button>
+                    <button
+                      onClick={() => setView('history')}
+                      className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all ${
+                        view === 'history' ? 'bg-white shadow-sm text-indigo-600' : 'text-slate-400'
+                      }`}
+                    >
+                      History
+                    </button>
+                  </div>
                 </div>
 
-                <div className="space-y-4">
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Material Balance (Currently Held)</p>
-                  
-                  {selectedLedger.length === 0 ? (
-                    <div className="bg-slate-50 rounded-2xl p-8 text-center border-2 border-dashed border-slate-100">
-                      <p className="text-slate-400 font-bold">No materials currently held</p>
-                    </div>
-                  ) : (
-                    <div className="grid gap-3">
-                      {selectedLedger.map(item => (
-                        <div key={item.id} className="bg-slate-50 rounded-2xl p-4 flex items-center justify-between border border-slate-100/50">
-                          <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center text-indigo-600 shadow-sm">
-                              <Package size={16} />
+                {view === 'balance' ? (
+                  <div className="space-y-4">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Material Balance (Currently Held)</p>
+                    
+                    {selectedLedger.length === 0 ? (
+                      <div className="bg-slate-50 rounded-2xl p-8 text-center border-2 border-dashed border-slate-100">
+                        <p className="text-slate-400 font-bold">No materials currently held</p>
+                      </div>
+                    ) : (
+                      <div className="grid gap-3">
+                        {selectedLedger.map(item => (
+                          <div key={item.id} className="bg-slate-50 rounded-2xl p-4 flex items-center justify-between border border-slate-100/50">
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center text-indigo-600 shadow-sm">
+                                <Package size={16} />
+                              </div>
+                              <div>
+                                <p className="font-bold text-slate-900">{item.name}</p>
+                                <p className="text-[10px] font-bold text-slate-400 uppercase">{item.unit}</p>
+                              </div>
                             </div>
-                            <div>
-                              <p className="font-bold text-slate-900">{item.name}</p>
-                              <p className="text-[10px] font-bold text-slate-400 uppercase">{item.unit}</p>
+                            <div className="text-right">
+                              <p className={`text-lg font-black tabular-nums ${item.balance > 0 ? 'text-indigo-600' : 'text-emerald-600'}`}>
+                                {item.balance > 0 ? '+' : ''}{item.balance}
+                              </p>
+                              <p className="text-[10px] font-bold text-slate-400 uppercase">Outstanding</p>
                             </div>
                           </div>
-                          <div className="text-right">
-                            <p className={`text-lg font-black tabular-nums ${item.balance > 0 ? 'text-indigo-600' : 'text-emerald-600'}`}>
-                              {item.balance > 0 ? '+' : ''}{item.balance}
-                            </p>
-                            <p className="text-[10px] font-bold text-slate-400 uppercase">Outstanding</p>
-                          </div>
-                        </div>
-                      ))}
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Recent Contractor Transactions</p>
+                    <div className="grid gap-2 max-h-[400px] overflow-y-auto pr-2">
+                      {transactions
+                        .filter(t => t.contractorId === selectedContractorId)
+                        .sort((a, b) => b.timestamp - a.timestamp)
+                        .map(tx => {
+                          const item = items.find(i => i.id === tx.itemId);
+                          return (
+                            <div key={tx.id} className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                              <div className="flex justify-between items-start mb-1">
+                                <p className="font-bold text-slate-900 text-sm">{item?.name || 'Deleted Item'}</p>
+                                <span className={`text-xs font-black tabular-nums ${tx.type === 'IN' ? 'text-emerald-600' : 'text-indigo-600'}`}>
+                                  {tx.type === 'IN' ? '← Received' : '→ Issued'} {tx.quantity}
+                                </span>
+                              </div>
+                              <div className="flex justify-between items-end">
+                                <p className="text-[10px] text-slate-500 italic">"{tx.reason}"</p>
+                                <p className="text-[9px] font-bold text-slate-400">
+                                  {new Date(tx.timestamp).toLocaleDateString()}
+                                </p>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      {transactions.filter(t => t.contractorId === selectedContractorId).length === 0 && (
+                        <p className="text-center py-8 text-slate-400 italic">No transactions found</p>
+                      )}
                     </div>
-                  )}
-                </div>
+                  </div>
+                )}
 
                 <div className="pt-4 border-t border-slate-100">
                   <p className="text-xs text-slate-500 italic">

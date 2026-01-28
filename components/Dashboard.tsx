@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { InventoryItem, Transaction, TransactionType, AuthSession, User, Contractor } from '../types';
-import { ArrowDown, ArrowUp, Timer, Package, History, HardHat } from './Icons';
+import { ArrowDown, ArrowUp, Timer, Package, History, HardHat, Plus } from './Icons';
 
 interface DashboardProps {
   items: InventoryItem[];
@@ -196,15 +196,15 @@ const Dashboard: React.FC<DashboardProps> = ({
                       <div className="flex gap-2">
                         <button 
                           onClick={() => onAction('OUT', item)}
-                          className="flex-[2] py-3 sm:py-4 bg-slate-900 text-white rounded-xl sm:rounded-2xl font-black text-[10px] sm:text-xs active:scale-95 transition-all uppercase tracking-widest"
+                          className="flex-[2] py-3 sm:py-4 bg-red-500 text-white rounded-xl sm:rounded-2xl font-black text-[10px] sm:text-xs active:scale-95 transition-all uppercase tracking-widest shadow-md shadow-red-100"
                         >
                           TAKE OUT
                         </button>
                         <button 
                           onClick={() => onAction('IN', item)}
-                          className="flex-1 py-3 sm:py-4 bg-indigo-50 text-indigo-600 rounded-xl sm:rounded-2xl flex items-center justify-center active:scale-95 transition-all"
+                          className="flex-1 py-3 sm:py-4 bg-emerald-500 text-white rounded-xl sm:rounded-2xl flex items-center justify-center active:scale-95 transition-all shadow-md shadow-emerald-100"
                         >
-                          <ArrowDown size={18} className="sm:w-5 sm:h-5" />
+                          <Plus size={18} className="sm:w-5 sm:h-5" />
                         </button>
                         <button 
                           onClick={() => onAction('WIP', item)}
