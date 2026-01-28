@@ -285,25 +285,25 @@ const UserManager: React.FC<UserManagerProps> = ({ currentUserId }) => {
           </p>
         </div>
         
-        <div className="divide-y divide-slate-100">
+        <div className="divide-y divide-slate-100 overflow-x-auto">
           {users.map(user => (
-            <div key={user.id} className="p-4 flex items-center justify-between hover:bg-slate-50 transition-colors">
+            <div key={user.id} className="p-4 flex items-center justify-between hover:bg-slate-50 transition-colors min-w-[600px]">
               <div className="flex items-center gap-4">
-                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${
+                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 ${
                   user.role === 'admin' ? 'bg-purple-100 text-purple-600' : 'bg-slate-100 text-slate-500'
                 }`}>
                   {user.role === 'admin' ? <Shield size={24} /> : <UserIcon size={24} />}
                 </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <p className="font-bold text-slate-900">{user.displayName}</p>
-                    <span className={`px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded-full ${
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="font-bold text-slate-900 whitespace-nowrap">{user.displayName}</p>
+                    <span className={`px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded-full whitespace-nowrap ${
                       user.role === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-slate-100 text-slate-600'
                     }`}>
                       {user.role}
                     </span>
                     {user.id === currentUserId && (
-                      <span className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded-full bg-emerald-100 text-emerald-700">
+                      <span className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded-full bg-emerald-100 text-emerald-700 whitespace-nowrap">
                         You
                       </span>
                     )}
@@ -312,10 +312,10 @@ const UserManager: React.FC<UserManagerProps> = ({ currentUserId }) => {
                 </div>
               </div>
 
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 flex-shrink-0">
                 {/* Password reveal */}
                 <div className="flex items-center gap-2 bg-slate-50 px-3 py-2 rounded-xl">
-                  <span className="text-xs text-slate-400 font-mono">
+                  <span className="text-xs text-slate-400 font-mono whitespace-nowrap">
                     {showPasswords[user.id] ? user.password : '••••••••'}
                   </span>
                   <button
@@ -329,7 +329,7 @@ const UserManager: React.FC<UserManagerProps> = ({ currentUserId }) => {
                 {/* Edit button */}
                 <button
                   onClick={() => handleEdit(user)}
-                  className="px-4 py-2 bg-slate-100 text-slate-600 rounded-xl text-sm font-bold hover:bg-slate-200 transition-all"
+                  className="px-4 py-2 bg-slate-100 text-slate-600 rounded-xl text-sm font-bold hover:bg-slate-200 transition-all whitespace-nowrap"
                 >
                   Edit
                 </button>
@@ -338,7 +338,7 @@ const UserManager: React.FC<UserManagerProps> = ({ currentUserId }) => {
                 <button
                   onClick={() => handleDelete(user.id)}
                   disabled={user.id === currentUserId}
-                  className={`p-2 rounded-xl transition-all ${
+                  className={`p-2 rounded-xl transition-all flex-shrink-0 ${
                     user.id === currentUserId 
                       ? 'bg-slate-50 text-slate-300 cursor-not-allowed' 
                       : 'bg-red-50 text-red-500 hover:bg-red-100'
