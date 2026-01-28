@@ -269,7 +269,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                       {cat.charAt(0).toUpperCase()}
                     </div>
                     <div className="text-left">
-                      <h3 className="font-black text-xl text-slate-900">{cat}</h3>
+                      <h3 className="font-black text-2xl text-indigo-700">{cat}</h3>
                       <p className="text-sm text-slate-400 font-bold">
                         {categoryItems.length} item{categoryItems.length !== 1 ? 's' : ''}
                       </p>
@@ -304,7 +304,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                         {/* Item Info */}
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
-                            <h4 className="font-black text-base text-slate-900 truncate">{item.name}</h4>
+                            <h4 className="font-black text-lg text-slate-800 truncate">{item.name}</h4>
                             {item.wip > 0 && (
                               <span className="shrink-0 text-xs font-black text-amber-600 bg-amber-100 px-2 py-0.5 rounded">
                                 WIP:{item.wip}
