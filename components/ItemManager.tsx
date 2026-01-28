@@ -150,14 +150,14 @@ const ItemManager: React.FC<ItemManagerProps> = ({ items, transactions, stockLev
         )}
       </div>
 
-      {/* Category Pills */}
-      <div className="flex gap-2 overflow-x-auto no-scrollbar pb-2 -mx-4 px-4">
+      {/* Category Pills - Multi-line Grid */}
+      <div className="flex flex-wrap gap-2">
         <button
           onClick={() => handleCategorySelect(null)}
-          className={`shrink-0 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${
+          className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${
             !selectedCategory 
               ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200' 
-              : 'bg-white text-slate-500 border border-slate-200'
+              : 'bg-white text-slate-500 border border-slate-200 hover:border-indigo-300'
           }`}
         >
           All ({items.length})
@@ -166,10 +166,10 @@ const ItemManager: React.FC<ItemManagerProps> = ({ items, transactions, stockLev
           <button
             key={cat}
             onClick={() => handleCategorySelect(cat)}
-            className={`shrink-0 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center gap-2 ${
+            className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center gap-2 ${
               selectedCategory === cat 
                 ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200' 
-                : 'bg-white text-slate-500 border border-slate-200'
+                : 'bg-white text-slate-500 border border-slate-200 hover:border-indigo-300'
             }`}
           >
             {cat}
