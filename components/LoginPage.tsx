@@ -113,6 +113,9 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 flex items-center justify-center p-4 relative overflow-hidden">
       {/* Background Pattern */}
       <div className="absolute inset-0 opacity-20">
+        <div className="absolute inset-0 flex items-center justify-center opacity-10 pointer-events-none">
+          <img src="/nimaya-logo.jpg" alt="" className="w-96 h-96 object-contain grayscale" />
+        </div>
         <div className="absolute top-20 left-20 w-72 h-72 bg-indigo-500 rounded-full mix-blend-multiply filter blur-3xl animate-pulse"></div>
         <div className="absolute top-40 right-20 w-72 h-72 bg-purple-500 rounded-full mix-blend-multiply filter blur-3xl animate-pulse" style={{ animationDelay: '1s' }}></div>
         <div className="absolute bottom-20 left-1/2 w-72 h-72 bg-pink-500 rounded-full mix-blend-multiply filter blur-3xl animate-pulse" style={{ animationDelay: '2s' }}></div>
@@ -129,8 +132,8 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
       <div className="relative w-full max-w-md">
         {/* Logo & Header */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-3xl shadow-2xl shadow-indigo-500/30 mb-6 transform hover:scale-105 transition-transform">
-            <Package size={40} className="text-white" />
+          <div className="inline-flex items-center justify-center w-32 h-32 bg-white rounded-3xl shadow-2xl shadow-indigo-500/30 mb-6 transform hover:scale-105 transition-transform p-4">
+            <img src="/nimaya-logo.jpg" alt="Nimaya" className="w-full h-full object-contain" />
           </div>
           <h1 className="text-4xl font-black text-white tracking-tight mb-2">
             Inventory Mandu

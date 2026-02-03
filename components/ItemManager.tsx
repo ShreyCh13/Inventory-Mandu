@@ -1,16 +1,17 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import { InventoryItem, Transaction } from '../types';
+import { InventoryItem, Transaction, Contractor } from '../types';
 import { Package, Timer } from './Icons';
 
 interface ItemManagerProps {
   items: InventoryItem[];
   transactions: Transaction[];
   stockLevels: Record<string, { stock: number; wip: number }>;
+  contractors: Contractor[];
 }
 
 const SEARCH_DEBOUNCE_MS = 300;
 
-const ItemManager: React.FC<ItemManagerProps> = ({ items, transactions, stockLevels }) => {
+const ItemManager: React.FC<ItemManagerProps> = ({ items, transactions, stockLevels, contractors }) => {
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
   const [searchInput, setSearchInput] = useState('');
   const [searchQuery, setSearchQuery] = useState(''); // Debounced value
@@ -69,6 +70,19 @@ const ItemManager: React.FC<ItemManagerProps> = ({ items, transactions, stockLev
     });
   }, [items, stockLevels, itemLocations]);
 
+  // Pre-calculate contractors for search
+  const itemContractors = useMemo(() => {
+    const map: Record<string, Set<string>> = {};
+    transactions.forEach(t => {
+      if (t.contractorId) {
+        if (!map[t.itemId]) map[t.itemId] = new Set();
+        const contractor = contractors.find(c => c.id === t.contractorId);
+        if (contractor) map[t.itemId].add(contractor.name.toLowerCase());
+      }
+    });
+    return map;
+  }, [transactions, contractors]);
+
   // Filter items - search everything
   const filteredStats = useMemo(() => {
     if (!searchQuery) return itemStats;
@@ -79,9 +93,10 @@ const ItemManager: React.FC<ItemManagerProps> = ({ items, transactions, stockLev
       item.category.toLowerCase().includes(q) ||
       item.unit.toLowerCase().includes(q) ||
       (item.description?.toLowerCase().includes(q)) ||
-      (item.location?.toLowerCase().includes(q))
+      (item.location?.toLowerCase().includes(q)) ||
+      (itemContractors[item.id] && Array.from(itemContractors[item.id]).some(c => c.includes(q)))
     );
-  }, [itemStats, searchQuery]);
+  }, [itemStats, searchQuery, itemContractors]);
 
   // Group filtered items by category
   const groupedItems = useMemo(() => {
@@ -207,7 +222,7 @@ const ItemManager: React.FC<ItemManagerProps> = ({ items, transactions, stockLev
                       >
                         {/* Item Name - Full Width, VERY Prominent */}
                         <div className="mb-3">
-                          <h4 className="font-black text-2xl text-slate-900 leading-tight bg-gradient-to-r from-emerald-50 to-transparent px-3 py-2 -mx-1 rounded-xl border-l-4 border-emerald-500">{item.name}</h4>
+                          <h4 className="font-black text-lg text-slate-900 leading-tight bg-gradient-to-r from-emerald-50 to-transparent px-3 py-2 -mx-1 rounded-xl border-l-4 border-emerald-500">{item.name}</h4>
                         </div>
                         <div className="flex items-center justify-between gap-4">
                           <div className="flex flex-wrap items-center gap-2 text-sm text-slate-500 font-bold">

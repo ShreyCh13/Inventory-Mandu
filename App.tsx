@@ -724,7 +724,10 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 pb-28 md:pb-0 md:pl-24">
-      <nav className="fixed bottom-0 left-0 right-0 h-20 bg-white border-t border-slate-200 flex items-center z-50 overflow-x-auto no-scrollbar md:top-0 md:left-0 md:h-full md:w-24 md:flex-col md:justify-start md:pt-10 md:border-r md:border-t-0 shadow-2xl md:shadow-none px-4 sm:px-6 md:px-0 gap-2 md:gap-0">
+      <nav className="fixed bottom-0 left-0 right-0 h-20 bg-white border-t border-slate-200 flex items-center z-50 overflow-x-auto no-scrollbar md:top-0 md:left-0 md:h-full md:w-24 md:flex-col md:justify-start md:pt-6 md:border-r md:border-t-0 shadow-2xl md:shadow-none px-4 sm:px-6 md:px-0 gap-2 md:gap-0">
+        <div className="hidden md:flex flex-col items-center mb-6">
+          <img src="/nimaya-logo.jpg" alt="Nimaya" className="w-16 h-auto object-contain mb-2" />
+        </div>
         <button onClick={() => setActiveTab('dashboard')} className={`p-4 rounded-2xl transition-all shrink-0 ${activeTab === 'dashboard' ? 'bg-indigo-600 text-white shadow-xl scale-110' : 'text-slate-400 hover:bg-slate-100'}`}>
           <LayoutDashboard size={28} />
         </button>
@@ -833,6 +836,9 @@ const App: React.FC = () => {
         
         <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-6 mb-8 sm:mb-12">
           <div>
+            <div className="md:hidden mb-4">
+              <img src="/nimaya-logo.jpg" alt="Nimaya" className="h-12 w-auto object-contain" />
+            </div>
             <div className="flex items-center gap-3 mb-1">
               <div className={`w-3 h-3 rounded-full ${
                 !isOnline ? 'bg-red-500' :
@@ -911,7 +917,7 @@ const App: React.FC = () => {
             onDeleteTransaction={handleDeleteTransaction}
           />
         )}
-        {activeTab === 'items' && <ItemManager items={items} transactions={transactions} stockLevels={stockLevels} />}
+        {activeTab === 'items' && <ItemManager items={items} transactions={transactions} stockLevels={stockLevels} contractors={contractors} />}
         {activeTab === 'history' && (
           <HistoryLog 
             transactions={transactions} 

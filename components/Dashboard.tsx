@@ -161,6 +161,19 @@ const Dashboard: React.FC<DashboardProps> = ({
     });
   }, [items, stockLevels, itemLocations]);
 
+  // Pre-calculate contractors for search
+  const itemContractors = useMemo(() => {
+    const map: Record<string, Set<string>> = {};
+    transactions.forEach(t => {
+      if (t.contractorId) {
+        if (!map[t.itemId]) map[t.itemId] = new Set();
+        const contractor = contractors.find(c => c.id === t.contractorId);
+        if (contractor) map[t.itemId].add(contractor.name.toLowerCase());
+      }
+    });
+    return map;
+  }, [transactions, contractors]);
+
   // Filter items based on search - search everything
   const filteredStats = useMemo(() => {
     if (!filter) return inventoryStats;
@@ -171,9 +184,10 @@ const Dashboard: React.FC<DashboardProps> = ({
       i.category.toLowerCase().includes(q) ||
       i.unit.toLowerCase().includes(q) ||
       (i.description?.toLowerCase().includes(q)) ||
-      (i.location?.toLowerCase().includes(q))
+      (i.location?.toLowerCase().includes(q)) ||
+      (itemContractors[i.id] && Array.from(itemContractors[i.id]).some(c => c.includes(q)))
     );
-  }, [inventoryStats, filter]);
+  }, [inventoryStats, filter, itemContractors]);
 
   // Grouping filtered items by Category
   const groupedItems = useMemo(() => {
@@ -303,7 +317,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                       >
                         {/* Item Name - Full Width, VERY Prominent */}
                         <div className="mb-4">
-                          <h4 className="font-black text-2xl text-slate-900 leading-tight bg-gradient-to-r from-emerald-50 to-transparent px-3 py-2 -mx-1 rounded-xl border-l-4 border-emerald-500">{item.name}</h4>
+                          <h4 className="font-black text-lg text-slate-900 leading-tight bg-gradient-to-r from-emerald-50 to-transparent px-3 py-2 -mx-1 rounded-xl border-l-4 border-emerald-500">{item.name}</h4>
                           <div className="flex flex-wrap items-center gap-2 mt-2 text-sm text-slate-500 font-bold pl-3">
                             <span className="uppercase bg-slate-100 px-2 py-0.5 rounded">{item.unit}</span>
                             {item.location && (
