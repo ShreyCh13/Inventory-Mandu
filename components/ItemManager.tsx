@@ -185,7 +185,7 @@ const ItemManager: React.FC<ItemManagerProps> = ({ items, transactions, stockLev
                       {cat.charAt(0).toUpperCase()}
                     </div>
                     <div className="text-left">
-                      <h3 className="font-black text-2xl text-indigo-700">{cat}</h3>
+                      <h3 className="font-black text-lg text-black">{cat}</h3>
                       <p className="text-sm text-slate-400 font-bold">
                         {categoryItems.length} item{categoryItems.length !== 1 ? 's' : ''}
                         {categoryStats[cat]?.lowStock > 0 && (
@@ -222,7 +222,7 @@ const ItemManager: React.FC<ItemManagerProps> = ({ items, transactions, stockLev
                       >
                         {/* Item Name - Full Width, VERY Prominent */}
                         <div className="mb-3">
-                          <h4 className="font-black text-lg text-slate-900 leading-tight bg-gradient-to-r from-emerald-50 to-transparent px-3 py-2 -mx-1 rounded-xl border-l-4 border-emerald-500">{item.name}</h4>
+                          <h4 className="font-black text-base text-black leading-tight bg-gradient-to-r from-emerald-50 to-transparent px-3 py-2 -mx-1 rounded-xl border-l-4 border-emerald-500">{item.name}</h4>
                         </div>
                         <div className="flex items-center justify-between gap-4">
                           <div className="flex flex-wrap items-center gap-2 text-sm text-slate-500 font-bold">
