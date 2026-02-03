@@ -161,3 +161,65 @@ select {
   -ms-overflow-style: none;  /* IE and Edge */
   scrollbar-width: none;  /* Firefox */
 }
+
+/* Performance optimizations for smooth scrolling */
+.smooth-scroll {
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
+}
+
+/* Hardware acceleration for scrollable containers */
+[class*="overflow-y-auto"],
+[class*="overflow-x-auto"],
+[class*="overflow-auto"] {
+  -webkit-overflow-scrolling: touch;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  will-change: scroll-position;
+}
+
+/* Optimize list rendering */
+.virtual-list-item {
+  contain: layout style paint;
+}
+
+/* Reduce paint on animated elements */
+.transition-all {
+  will-change: transform, opacity;
+}
+
+/* Optimize fixed/sticky positioning */
+nav, [class*="fixed"], [class*="sticky"] {
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+
+/* Optimize cards and repeated elements */
+[class*="rounded-xl"],
+[class*="rounded-2xl"],
+[class*="rounded-3xl"] {
+  contain: layout style;
+}
+
+/* Reduce layout thrashing on interactive elements */
+button, input, select {
+  contain: layout;
+}
+
+/* Performance optimizations for mobile */
+@media (max-width: 768px) {
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+  
+  /* Optimize touch scrolling on mobile */
+  body {
+    overscroll-behavior-y: none;
+  }
+  
+  /* Prevent text selection lag on touch */
+  .disable-select {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+}

@@ -3,24 +3,20 @@ import React, { useState } from 'react';
 import { InventoryItem, Transaction, Category, Contractor, User, AuthSession } from '../types';
 import UserManager from './UserManager';
 import CategoryManager from './CategoryManager';
-import ContractorManager from './ContractorManager';
 import { isSupabaseConfigured } from '../lib/supabase';
-import { Database as DatabaseIcon, ExternalLink, Users, Folder, HardHat, Settings } from './Icons';
-import * as db from '../lib/db';
+import { Database as DatabaseIcon, ExternalLink, Users, Folder, Settings } from './Icons';
 
 interface AdminPanelProps {
   session: AuthSession;
   items: InventoryItem[];
   transactions: Transaction[];
   categories: string[];
-  contractors: Contractor[];
   users: User[];
   onUpdateCategories: (newCategories: string[]) => Promise<void>;
   onUpdateItemCategory: (itemId: string, newCategory: string) => Promise<void>;
   onUpdateItem: (itemId: string, updates: Partial<InventoryItem>) => Promise<void>;
   onCreateItem: (item: Omit<InventoryItem, 'id'>) => Promise<void>;
   onDeleteItem: (itemId: string) => Promise<void>;
-  onRefreshContractors: () => Promise<void>;
 }
 
 const getSupabaseProjectId = (): string | null => {
@@ -35,21 +31,18 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
   items,
   transactions,
   categories,
-  contractors,
   users,
   onUpdateCategories,
   onUpdateItemCategory,
   onUpdateItem,
   onCreateItem,
-  onDeleteItem,
-  onRefreshContractors
+  onDeleteItem
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'users' | 'categories' | 'contractors' | 'sync'>('categories');
+  const [activeSubTab, setActiveSubTab] = useState<'users' | 'categories' | 'sync'>('categories');
   const projectId = getSupabaseProjectId();
 
   const subTabs = [
     { id: 'categories', label: 'Categories', icon: Folder, color: 'text-purple-600', bg: 'bg-purple-50' },
-    { id: 'contractors', label: 'Contractors', icon: HardHat, color: 'text-indigo-600', bg: 'bg-indigo-50' },
     { id: 'users', label: 'Users', icon: Users, color: 'text-emerald-600', bg: 'bg-emerald-50' },
     { id: 'sync', label: 'Database', icon: DatabaseIcon, color: 'text-amber-600', bg: 'bg-amber-50' }
   ] as const;
@@ -96,19 +89,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
               onUpdateItem={onUpdateItem}
               onCreateItem={onCreateItem}
               onDeleteItem={onDeleteItem}
-            />
-          </div>
-        )}
-
-        {activeSubTab === 'contractors' && (
-          <div className="animate-in slide-in-from-bottom duration-300">
-            <ContractorManager 
-              contractors={contractors} 
-              transactions={transactions}
-              items={items}
-              onCreate={db.createContractor}
-              onUpdate={db.updateContractor}
-              onDelete={db.deleteContractor}
             />
           </div>
         )}

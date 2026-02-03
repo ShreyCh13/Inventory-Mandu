@@ -10,6 +10,7 @@ interface ContractorManagerProps {
   onCreate: (name: string) => Promise<Contractor | null>;
   onUpdate: (id: string, name: string) => Promise<boolean>;
   onDelete: (id: string) => Promise<boolean>;
+  isReadOnly?: boolean;
 }
 
 const TX_PER_PAGE = 50;
@@ -22,7 +23,8 @@ const ContractorManager: React.FC<ContractorManagerProps> = ({
   items,
   onCreate,
   onUpdate,
-  onDelete
+  onDelete,
+  isReadOnly = false
 }) => {
   const confirm = useConfirm();
   const [showAdd, setShowAdd] = useState(false);
@@ -246,17 +248,19 @@ const ContractorManager: React.FC<ContractorManagerProps> = ({
           <h2 className="text-xl font-black text-slate-900">Contractors</h2>
           <p className="text-xs text-slate-500">{contractors.length} registered</p>
         </div>
-        <button
-          onClick={() => { resetForm(); setShowAdd(true); }}
-          className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2.5 rounded-xl font-bold text-sm hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200"
-        >
-          <HardHat size={18} />
-          Add
-        </button>
+        {!isReadOnly && (
+          <button
+            onClick={() => { resetForm(); setShowAdd(true); }}
+            className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2.5 rounded-xl font-bold text-sm hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200"
+          >
+            <HardHat size={18} />
+            Add
+          </button>
+        )}
       </div>
 
       {/* Add/Edit Form */}
-      {(showAdd || editingId) && (
+      {!isReadOnly && (showAdd || editingId) && (
         <div className="bg-white rounded-xl p-4 shadow-sm border border-slate-100">
           {error && (
             <div className="mb-3 p-2 bg-red-50 border border-red-200 rounded-lg text-red-600 text-xs font-medium">
@@ -343,20 +347,22 @@ const ContractorManager: React.FC<ContractorManagerProps> = ({
                       </p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-1 shrink-0">
-                    <button
-                      onClick={(e) => { e.stopPropagation(); startEdit(contractor); }}
-                      className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors"
-                    >
-                      <Edit size={16} />
-                    </button>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); handleDelete(contractor); }}
-                      className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors"
-                    >
-                      <Trash size={16} />
-                    </button>
-                  </div>
+                  {!isReadOnly && (
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); startEdit(contractor); }}
+                        className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors"
+                      >
+                        <Edit size={16} />
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleDelete(contractor); }}
+                        className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors"
+                      >
+                        <Trash size={16} />
+                      </button>
+                    </div>
+                  )}
                 </div>
               );
             })}

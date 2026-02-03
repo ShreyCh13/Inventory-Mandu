@@ -11,7 +11,8 @@ import HistoryLog from './components/HistoryLog';
 import LoginPage from './components/LoginPage';
 import AdminPanel from './components/AdminPanel';
 import SyncConflictDialog from './components/SyncConflictDialog';
-import { Plus, Minus, Package, History, LayoutDashboard, Settings, User as UserIcon, LogOut } from './components/Icons';
+import { Plus, Minus, Package, History, LayoutDashboard, Settings, User as UserIcon, LogOut, HardHat } from './components/Icons';
+import ContractorManager from './components/ContractorManager';
 
 // Default categories - will be loaded from database
 export const DEFAULT_CATEGORIES = [
@@ -61,7 +62,7 @@ const App: React.FC = () => {
   const [pendingSummary, setPendingSummary] = useState({ pending: 0, conflicts: 0 });
   const [isDataGuarded, setIsDataGuarded] = useState(false);
   
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'items' | 'history' | 'admin'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'items' | 'history' | 'contractors' | 'admin'>('dashboard');
   const [showTransactionModal, setShowTransactionModal] = useState<{type: TransactionType, item?: InventoryItem} | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
@@ -733,6 +734,10 @@ const App: React.FC = () => {
         <button onClick={() => setActiveTab('history')} className={`p-4 rounded-2xl transition-all shrink-0 md:mt-6 ${activeTab === 'history' ? 'bg-indigo-600 text-white shadow-xl scale-110' : 'text-slate-400 hover:bg-slate-100'}`}>
           <History size={28} />
         </button>
+        {/* Contractors Tab - Visible to everyone */}
+        <button onClick={() => setActiveTab('contractors')} className={`p-4 rounded-2xl transition-all shrink-0 md:mt-6 ${activeTab === 'contractors' ? 'bg-amber-500 text-white shadow-xl scale-110' : 'text-slate-400 hover:bg-slate-100'}`}>
+          <HardHat size={28} />
+        </button>
         {/* Admin-only Tab */}
         {session.user.role === 'admin' && (
           <button onClick={() => setActiveTab('admin')} className={`p-4 rounded-2xl transition-all shrink-0 md:mt-6 ${activeTab === 'admin' ? 'bg-purple-600 text-white shadow-xl scale-110' : 'text-slate-400 hover:bg-slate-100'}`}>
@@ -871,6 +876,7 @@ const App: React.FC = () => {
               {activeTab === 'dashboard' && 'Folders'}
               {activeTab === 'items' && 'Catalog'}
               {activeTab === 'history' && 'Logs'}
+              {activeTab === 'contractors' && 'Contractors'}
               {activeTab === 'admin' && 'Admin'}
             </h1>
           </div>
@@ -919,23 +925,29 @@ const App: React.FC = () => {
             onDeleteTransaction={handleDeleteTransaction} 
           />
         )}
+        {activeTab === 'contractors' && (
+          <ContractorManager 
+            contractors={contractors} 
+            transactions={transactions}
+            items={items}
+            onCreate={session.user.role === 'admin' ? db.createContractor : async () => null}
+            onUpdate={session.user.role === 'admin' ? db.updateContractor : async () => false}
+            onDelete={session.user.role === 'admin' ? db.deleteContractor : async () => false}
+            isReadOnly={session.user.role !== 'admin'}
+          />
+        )}
         {activeTab === 'admin' && session.user.role === 'admin' && (
           <AdminPanel
             session={session}
             items={items}
             transactions={transactions}
             categories={categories}
-            contractors={contractors}
             users={users}
             onUpdateCategories={handleUpdateCategories}
             onUpdateItemCategory={updateItemCategory}
             onUpdateItem={handleUpdateItem}
             onCreateItem={handleCreateItem}
             onDeleteItem={handleDeleteItem}
-            onRefreshContractors={async () => {
-              const fresh = await db.getContractors();
-              setContractors(fresh);
-            }}
           />
         )}
       </main>
