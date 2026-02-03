@@ -180,7 +180,7 @@ const ItemManager: React.FC<ItemManagerProps> = ({ items, transactions, stockLev
                 >
                   <div className="flex items-center gap-3">
                     <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-white font-black text-xl ${
-                      isExpanded ? 'bg-indigo-600' : 'bg-slate-400'
+                      isExpanded ? 'bg-black' : 'bg-slate-400'
                     }`}>
                       {cat.charAt(0).toUpperCase()}
                     </div>
@@ -228,7 +228,7 @@ const ItemManager: React.FC<ItemManagerProps> = ({ items, transactions, stockLev
                           <div className="flex flex-wrap items-center gap-2 text-sm text-slate-500 font-bold">
                             <span className="uppercase bg-slate-100 px-2 py-0.5 rounded">{item.unit}</span>
                             {item.location && (
-                              <span className="text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full text-xs">📍 {item.location}</span>
+                              <span className="text-slate-700 bg-slate-100 px-2 py-0.5 rounded-full text-xs">📍 {item.location}</span>
                             )}
                             {item.wip > 0 && (
                               <span className="text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full text-xs font-black inline-flex items-center gap-1">
