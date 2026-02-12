@@ -58,6 +58,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
   const [newItemCategory, setNewItemCategory] = useState('');
   const [newItemUnit, setNewItemUnit] = useState('');
   const [isCustomCategory, setIsCustomCategory] = useState(false);
+  const [isCustomUnit, setIsCustomUnit] = useState(false);
   
   const [quantity, setQuantity] = useState<number>(1);
   // Auto-fill user from session
@@ -267,15 +268,33 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
                 </div>
                 <div>
                   <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Units</label>
-                  <select 
-                    className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-4 focus:border-indigo-500 outline-none font-bold text-lg appearance-none"
-                    value={newItemUnit}
-                    onChange={(e) => setNewItemUnit(e.target.value)}
-                    required
-                  >
-                    <option value="">Select Unit...</option>
-                    {UNITS.map(unit => <option key={unit} value={unit}>{unit}</option>)}
-                  </select>
+                  {isCustomUnit ? (
+                    <input 
+                      placeholder="Type unit name..."
+                      className="w-full bg-slate-50 border-2 border-indigo-500 rounded-2xl px-5 py-4 outline-none font-bold text-lg"
+                      value={newItemUnit}
+                      onChange={(e) => setNewItemUnit(e.target.value)}
+                      required
+                    />
+                  ) : (
+                    <select 
+                      className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-4 focus:border-indigo-500 outline-none font-bold text-lg appearance-none"
+                      value={newItemUnit}
+                      onChange={(e) => {
+                        if (e.target.value === "ADD_NEW") {
+                          setIsCustomUnit(true);
+                          setNewItemUnit("");
+                        } else {
+                          setNewItemUnit(e.target.value);
+                        }
+                      }}
+                      required
+                    >
+                      <option value="">Select Unit...</option>
+                      {UNITS.map(unit => <option key={unit} value={unit}>{unit}</option>)}
+                      <option value="ADD_NEW">+ New Unit...</option>
+                    </select>
+                  )}
                 </div>
               </div>
             </div>
