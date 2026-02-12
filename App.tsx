@@ -11,8 +11,10 @@ import HistoryLog from './components/HistoryLog';
 import LoginPage from './components/LoginPage';
 import AdminPanel from './components/AdminPanel';
 import SyncConflictDialog from './components/SyncConflictDialog';
-import SyncSettings from './components/SyncSettings';
 import { Plus, Minus, Package, History, LayoutDashboard, Settings, User as UserIcon, LogOut, HardHat } from './components/Icons';
+
+// Live Google Sheet URL — shared view for all users
+const LIVE_SHEET_URL = 'https://docs.google.com/spreadsheets/d/11SAtoFvcg2E9RdtotIWVqdMkEieLbYMYh9yUBvQEaIM/edit?usp=sharing';
 import ContractorManager from './components/ContractorManager';
 
 // Default categories - will be loaded from database
@@ -65,7 +67,7 @@ const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'items' | 'history' | 'contractors' | 'admin'>('dashboard');
   const [showTransactionModal, setShowTransactionModal] = useState<{type: TransactionType, item?: InventoryItem} | null>(null);
   const [showUserMenu, setShowUserMenu] = useState(false);
-  const [showSyncSettings, setShowSyncSettings] = useState(false);
+  const [showLiveSheetConfirm, setShowLiveSheetConfirm] = useState(false);
   const [stockError, setStockError] = useState<{ message: string; available: number } | null>(null);
   
   // Conflict resolution dialog state
@@ -873,12 +875,10 @@ const App: React.FC = () => {
                   <Plus size={24} />
                   Receive Stock
                 </button>
-                {session.user.role === 'admin' && (
-                  <button onClick={() => setShowSyncSettings(true)} className="hidden sm:flex items-center justify-center gap-2 bg-emerald-600 text-white px-6 py-5 rounded-3xl font-black shadow-xl shadow-emerald-100 hover:bg-emerald-700 active:scale-95 transition-all text-base">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
-                    Live Sheet
-                  </button>
-                )}
+                <button onClick={() => setShowLiveSheetConfirm(true)} className="hidden sm:flex items-center justify-center gap-2 bg-emerald-600 text-white px-6 py-5 rounded-3xl font-black shadow-xl shadow-emerald-100 hover:bg-emerald-700 active:scale-95 transition-all text-base">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
+                  Live Sheet
+                </button>
               </>
             )}
           </div>
@@ -971,12 +971,38 @@ const App: React.FC = () => {
         onClose={() => setShowConflictDialog(false)}
       />
 
-      {/* Sync Settings Modal */}
-      {showSyncSettings && session && (
-        <SyncSettings
-          onClose={() => setShowSyncSettings(false)}
-          session={session}
-        />
+      {/* Live Sheet Confirm Popup */}
+      {showLiveSheetConfirm && (
+        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-[100] flex items-center justify-center p-4" onClick={() => setShowLiveSheetConfirm(false)}>
+          <div className="bg-white w-full max-w-sm rounded-[32px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
+            <div className="p-8 text-center">
+              <div className="w-16 h-16 bg-emerald-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-600"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
+              </div>
+              <h3 className="text-xl font-black text-slate-900 mb-2">Open Live Sheet?</h3>
+              <p className="text-sm text-slate-500 mb-6">
+                This will open the Inventory Mandu Google Sheet with live stock data.
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowLiveSheetConfirm(false)}
+                  className="flex-1 py-4 rounded-2xl font-black text-slate-500 bg-slate-100 hover:bg-slate-200 transition-all"
+                >
+                  Cancel
+                </button>
+                <a
+                  href={LIVE_SHEET_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={() => setShowLiveSheetConfirm(false)}
+                  className="flex-1 py-4 rounded-2xl font-black text-white bg-emerald-600 hover:bg-emerald-700 shadow-xl shadow-emerald-200 transition-all text-center"
+                >
+                  Open Sheet
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
     </div>

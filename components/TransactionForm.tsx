@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { InventoryItem, Transaction, TransactionType, AuthSession, Contractor, User } from '../types';
-import { ArrowDown, ArrowUp, Timer, HardHat } from './Icons';
+import { ArrowDown, ArrowUp, Timer } from './Icons';
 import { createContractor } from '../lib/db';
 import SearchableSelect from './SearchableSelect';
 
@@ -338,61 +338,6 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
             </div>
           )}
 
-          {/* Contractor Field */}
-          <div className="bg-indigo-50/50 p-4 rounded-[24px] border border-indigo-100">
-            <label className="block text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
-              <HardHat size={12} />
-              Contractor <span className="text-indigo-300">(Optional)</span>
-            </label>
-            
-            {isAddingContractor ? (
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  placeholder="Enter contractor name..."
-                  className="flex-1 bg-white border-2 border-indigo-500 rounded-xl px-4 py-2 outline-none font-bold"
-                  value={newContractorName}
-                  onChange={(e) => setNewContractorName(e.target.value)}
-                  autoFocus
-                />
-                <button
-                  type="button"
-                  onClick={handleCreateContractor}
-                  disabled={contractorLoading}
-                  className="bg-indigo-600 text-white px-4 py-2 rounded-xl font-bold hover:bg-indigo-700 disabled:opacity-50"
-                >
-                  {contractorLoading ? '...' : 'Add'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setIsAddingContractor(false); setNewContractorName(''); }}
-                  className="bg-white border-2 border-indigo-100 text-indigo-600 px-4 py-2 rounded-xl font-bold"
-                >
-                  ✕
-                </button>
-              </div>
-            ) : (
-              <select
-                className="w-full bg-white border-2 border-indigo-100 rounded-xl px-4 py-3 focus:border-indigo-500 outline-none font-bold text-slate-700 appearance-none"
-                value={selectedContractorId}
-                onChange={(e) => {
-                  if (e.target.value === 'ADD_NEW') {
-                    setIsAddingContractor(true);
-                  } else {
-                    setSelectedContractorId(e.target.value);
-                  }
-                }}
-              >
-                <option value="">No Contractor assigned</option>
-                {contractors.map(c => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-                <option value="ADD_NEW" className="text-indigo-600 font-bold">+ Add New Contractor...</option>
-              </select>
-            )}
-            <p className="text-[10px] text-indigo-400 mt-2 font-medium">Assign materials to a specific contractor for tracking</p>
-          </div>
-
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Quantity</label>
@@ -415,6 +360,58 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
                 {user}
               </div>
             </div>
+          </div>
+
+          {/* Contractor Field */}
+          <div>
+            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
+              Contractor <span className="text-slate-300">(Optional)</span>
+            </label>
+            {isAddingContractor ? (
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="Enter contractor name..."
+                  className="flex-1 bg-slate-50 border-2 border-indigo-500 rounded-2xl px-5 py-4 outline-none font-bold"
+                  value={newContractorName}
+                  onChange={(e) => setNewContractorName(e.target.value)}
+                  autoFocus
+                />
+                <button
+                  type="button"
+                  onClick={handleCreateContractor}
+                  disabled={contractorLoading}
+                  className="bg-indigo-600 text-white px-4 py-2 rounded-xl font-bold hover:bg-indigo-700 disabled:opacity-50"
+                >
+                  {contractorLoading ? '...' : 'Add'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setIsAddingContractor(false); setNewContractorName(''); }}
+                  className="bg-slate-100 text-slate-500 px-4 py-2 rounded-xl font-bold"
+                >
+                  ✕
+                </button>
+              </div>
+            ) : (
+              <select
+                className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-4 focus:border-indigo-500 outline-none font-medium text-base appearance-none"
+                value={selectedContractorId}
+                onChange={(e) => {
+                  if (e.target.value === 'ADD_NEW') {
+                    setIsAddingContractor(true);
+                  } else {
+                    setSelectedContractorId(e.target.value);
+                  }
+                }}
+              >
+                <option value="">No Contractor assigned</option>
+                {contractors.map(c => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+                <option value="ADD_NEW" className="text-indigo-600 font-bold">+ Add New Contractor...</option>
+              </select>
+            )}
           </div>
 
           {/* Optional Fields Section - Hidden for OUT transactions */}
