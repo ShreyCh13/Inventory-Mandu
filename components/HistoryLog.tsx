@@ -181,6 +181,7 @@ const HistoryLog: React.FC<HistoryLogProps> = ({
   const [editAmount, setEditAmount] = useState('');
   const [editBillNumber, setEditBillNumber] = useState('');
   const [editContractorId, setEditContractorId] = useState('');
+  const [editApprovedBy, setEditApprovedBy] = useState('');
   
   // Add transaction modal state (admin only)
   const [showAddModal, setShowAddModal] = useState(false);
@@ -193,6 +194,7 @@ const HistoryLog: React.FC<HistoryLogProps> = ({
   const [newAmount, setNewAmount] = useState('');
   const [newBillNumber, setNewBillNumber] = useState('');
   const [newContractorId, setNewContractorId] = useState('');
+  const [newApprovedBy, setNewApprovedBy] = useState('');
 
   const openEditModal = (tx: Transaction) => {
     setEditingTx(tx);
@@ -205,6 +207,7 @@ const HistoryLog: React.FC<HistoryLogProps> = ({
     setEditAmount(tx.amount?.toString() || '');
     setEditBillNumber(tx.billNumber || '');
     setEditContractorId(tx.contractorId || '');
+    setEditApprovedBy(tx.approvedBy || '');
   };
 
   const saveEdit = () => {
@@ -213,7 +216,8 @@ const HistoryLog: React.FC<HistoryLogProps> = ({
         location: editLocation || undefined,
         amount: editAmount ? parseFloat(editAmount) : undefined,
         billNumber: editBillNumber || undefined,
-        contractorId: editContractorId || undefined
+        contractorId: editContractorId || undefined,
+        approvedBy: editApprovedBy || undefined
       };
       
       // Admin can edit all fields
@@ -240,6 +244,7 @@ const HistoryLog: React.FC<HistoryLogProps> = ({
     setNewAmount('');
     setNewBillNumber('');
     setNewContractorId('');
+    setNewApprovedBy('');
     setShowAddModal(true);
   };
 
@@ -257,6 +262,7 @@ const HistoryLog: React.FC<HistoryLogProps> = ({
       amount: newAmount ? parseFloat(newAmount) : undefined,
       billNumber: newBillNumber || undefined,
       contractorId: newContractorId || undefined,
+      approvedBy: newApprovedBy || undefined,
       createdBy: session.user.id
     });
     setShowAddModal(false);
@@ -329,7 +335,7 @@ const HistoryLog: React.FC<HistoryLogProps> = ({
     
     try {
       const CHUNK_SIZE = 1000;
-      const headers = ['Date', 'Item', 'Category', 'Type', 'Quantity', 'Unit', 'User', 'Reason', 'Location', 'Amount', 'Bill No.', 'Contractor'];
+      const headers = ['Date', 'Item', 'Category', 'Type', 'Quantity', 'Unit', 'User', 'Approved By', 'Reason', 'Location', 'Amount', 'Bill No.', 'Contractor'];
       const allRows: string[] = [];
       let offset = 0;
       
@@ -353,6 +359,7 @@ const HistoryLog: React.FC<HistoryLogProps> = ({
         chunk.forEach(tx => {
           const item = getItem(tx.itemId);
           const contractor = tx.contractorId ? contractors.find(c => c.id === tx.contractorId) : null;
+          const approvedByUser = tx.approvedBy ? users.find(u => u.id === tx.approvedBy) : null;
           allRows.push([
             escapeCSV(new Date(tx.timestamp).toLocaleString()),
             escapeCSV(item?.name || 'Deleted'),
@@ -361,6 +368,7 @@ const HistoryLog: React.FC<HistoryLogProps> = ({
             escapeCSV(tx.quantity),
             escapeCSV(item?.unit || ''),
             escapeCSV(tx.user),
+            escapeCSV(approvedByUser?.displayName || ''),
             escapeCSV(tx.reason),
             escapeCSV(tx.location || ''),
             escapeCSV(tx.amount || ''),
@@ -721,6 +729,11 @@ const HistoryLog: React.FC<HistoryLogProps> = ({
                                   {contractor.name}
                                 </span>
                               )}
+                              {tx.approvedBy && (
+                                <span className="text-[9px] font-black text-indigo-600 bg-indigo-100 px-2 py-0.5 rounded uppercase">
+                                  Approved: {users.find(u => u.id === tx.approvedBy)?.displayName || 'Unknown'}
+                                </span>
+                              )}
                             </div>
                             <h4 className="font-black text-lg sm:text-xl text-slate-800 truncate leading-tight">{item?.name || 'Deleted Item'}</h4>
                           </div>
@@ -968,6 +981,22 @@ const HistoryLog: React.FC<HistoryLogProps> = ({
                 </select>
               </div>
 
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
+                  Approved By <span className="text-slate-300">(Optional)</span>
+                </label>
+                <select
+                  value={editApprovedBy}
+                  onChange={(e) => setEditApprovedBy(e.target.value)}
+                  className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-3 focus:border-indigo-500 outline-none font-medium"
+                >
+                  <option value="">No approval selected</option>
+                  {users.map(u => (
+                    <option key={u.id} value={u.id}>{u.displayName}</option>
+                  ))}
+                </select>
+              </div>
+
               {editType !== 'OUT' && (
                 <>
                   <div>
@@ -1137,6 +1166,22 @@ const HistoryLog: React.FC<HistoryLogProps> = ({
                   <option value="">No Contractor</option>
                   {contractors.map(c => (
                     <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
+                  Approved By <span className="text-slate-300">(Optional)</span>
+                </label>
+                <select
+                  value={newApprovedBy}
+                  onChange={(e) => setNewApprovedBy(e.target.value)}
+                  className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-3 focus:border-indigo-500 outline-none font-medium"
+                >
+                  <option value="">No approval selected</option>
+                  {users.map(u => (
+                    <option key={u.id} value={u.id}>{u.displayName}</option>
                   ))}
                 </select>
               </div>

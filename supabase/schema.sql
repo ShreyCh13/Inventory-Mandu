@@ -87,6 +87,7 @@ CREATE TABLE IF NOT EXISTS transactions (
     amount DECIMAL(12, 2),
     bill_number VARCHAR(100),
     contractor_id UUID REFERENCES contractors(id) ON DELETE SET NULL,
+    approved_by UUID REFERENCES users(id) ON DELETE SET NULL DEFAULT NULL,
     created_by UUID REFERENCES users(id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -451,6 +452,12 @@ WHERE s.item_id = cs.item_id;
 
 -- Enable realtime on stock_summary table
 ALTER PUBLICATION supabase_realtime ADD TABLE stock_summary;
+
+-- ============================================
+-- MIGRATION: Add approved_by column to transactions
+-- ============================================
+-- Safe for existing data: nullable with DEFAULT NULL
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS approved_by UUID REFERENCES users(id) ON DELETE SET NULL DEFAULT NULL;
 
 -- ============================================
 -- DONE!

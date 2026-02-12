@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { InventoryItem, Transaction, TransactionType, AuthSession, Contractor } from '../types';
+import { InventoryItem, Transaction, TransactionType, AuthSession, Contractor, User } from '../types';
 import { ArrowDown, ArrowUp, Timer, HardHat } from './Icons';
 import { createContractor } from '../lib/db';
 import SearchableSelect from './SearchableSelect';
@@ -11,6 +11,7 @@ interface TransactionFormProps {
   transactions: Transaction[];
   categories: string[];
   contractors: Contractor[];
+  users: User[];
   session: AuthSession;
   stockLevels?: Record<string, { stock: number; wip: number }>;
   stockError?: { message: string; available: number } | null;
@@ -26,6 +27,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
   transactions, 
   categories,
   contractors,
+  users,
   stockLevels,
   stockError,
   session, 
@@ -67,6 +69,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
   const [location, setLocation] = useState('');
   const [amount, setAmount] = useState<string>('');
   const [billNumber, setBillNumber] = useState('');
+  const [selectedApprovedBy, setSelectedApprovedBy] = useState('');
   
   // Double-submit protection
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -141,6 +144,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
           amount: amount ? parseFloat(amount) : undefined,
           billNumber: billNumber || undefined,
           contractorId: selectedContractorId || undefined,
+          approvedBy: selectedApprovedBy || undefined,
           createdBy: session.user.id
         }, {
           name: newItemName,
@@ -163,6 +167,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
           amount: amount ? parseFloat(amount) : undefined,
           billNumber: billNumber || undefined,
           contractorId: selectedContractorId || undefined,
+          approvedBy: selectedApprovedBy || undefined,
           createdBy: session.user.id
         });
       }
@@ -453,6 +458,23 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
               </div>
             </div>
           )}
+
+          {/* Approved By - Visible for ALL transaction types */}
+          <div>
+            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
+              Approved By <span className="text-slate-300">(Optional)</span>
+            </label>
+            <select
+              className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-4 focus:border-indigo-500 outline-none font-medium text-base appearance-none"
+              value={selectedApprovedBy}
+              onChange={(e) => setSelectedApprovedBy(e.target.value)}
+            >
+              <option value="">No approval selected</option>
+              {users.map(u => (
+                <option key={u.id} value={u.id}>{u.displayName}</option>
+              ))}
+            </select>
+          </div>
 
           {!isNewItem && (
             <div>

@@ -1,7 +1,7 @@
 // Database operations layer with Supabase
 import { supabase, generateId, isSupabaseConfigured } from './supabase';
 import { 
-  User, Category, Contractor, InventoryItem, Transaction, AppSettings,
+  User, Category, Contractor, InventoryItem, Transaction,
   dbToUser, dbToCategory, dbToContractor, dbToItem, dbToTransaction
 } from './database.types';
 
@@ -1628,6 +1628,12 @@ export const createTransaction = async (
         }
         // Transaction was created by RPC, return it
         const txId = result.transaction_id || id;
+        
+        // RPC doesn't pass approved_by — set it via update if provided
+        if (tx.approvedBy && txId) {
+          await supabase.from('transactions').update({ approved_by: tx.approvedBy } as never).eq('id', txId);
+        }
+        
         const created: Transaction = {
           id: txId,
           itemId: tx.itemId,
@@ -1641,6 +1647,7 @@ export const createTransaction = async (
           amount: tx.amount,
           billNumber: tx.billNumber,
           contractorId: tx.contractorId,
+          approvedBy: tx.approvedBy,
           createdBy: tx.createdBy,
           updatedAt: timestamp
         };
@@ -1724,6 +1731,7 @@ export const createTransaction = async (
         amount: tx.amount || null,
         bill_number: tx.billNumber || null,
         contractor_id: tx.contractorId || null,
+        approved_by: tx.approvedBy || null,
         created_by: tx.createdBy || null,
         idempotency_key: idempotencyKey  // Prevent duplicates on retry
       },
@@ -1758,6 +1766,7 @@ export const createTransaction = async (
     amount: tx.amount || null,
     bill_number: tx.billNumber || null,
     contractor_id: tx.contractorId || null,
+    approved_by: tx.approvedBy || null,
     created_by: tx.createdBy || null,
     idempotency_key: idempotencyKey  // Prevent duplicates on retry
   };
@@ -1807,6 +1816,7 @@ export const updateTransaction = async (id: string, updates: Partial<Transaction
     if (updates.itemId !== undefined) dbUpdates.item_id = updates.itemId;
     if (updates.user !== undefined) dbUpdates.user_name = updates.user;
     if (updates.contractorId !== undefined) dbUpdates.contractor_id = updates.contractorId;
+    if (updates.approvedBy !== undefined) dbUpdates.approved_by = updates.approvedBy || null;
     enqueueOp({
       id: generateId(),
       entity: 'transactions',
@@ -1828,6 +1838,7 @@ export const updateTransaction = async (id: string, updates: Partial<Transaction
   if (updates.itemId !== undefined) dbUpdates.item_id = updates.itemId;
   if (updates.user !== undefined) dbUpdates.user_name = updates.user;
   if (updates.contractorId !== undefined) dbUpdates.contractor_id = updates.contractorId;
+  if (updates.approvedBy !== undefined) dbUpdates.approved_by = updates.approvedBy || null;
 
   const { error } = await supabase
     .from('transactions')
@@ -1888,77 +1899,7 @@ export const deleteTransaction = async (id: string): Promise<boolean> => {
 };
 
 // ============ SETTINGS ============
-
-export const getSettings = async (): Promise<AppSettings> => {
-  const defaultSettings: AppSettings = { googleSheetUrl: '' };
-
-  if (!isSupabaseConfigured()) {
-    const saved = localStorage.getItem('qs_settings');
-    return saved ? JSON.parse(saved) : defaultSettings;
-  }
-
-  if (!isOnline()) {
-    return readCache<AppSettings>(CACHE_KEYS.settings, defaultSettings);
-  }
-
-  const { data, error } = await supabase
-    .from('app_settings')
-    .select('*')
-    .eq('key', 'google_sheet_url')
-    .single();
-
-  if (error || !data) {
-    return defaultSettings;
-  }
-
-  const settings = { googleSheetUrl: (data as Record<string, unknown>).value as string || '' };
-  writeCache(CACHE_KEYS.settings, settings);
-  return settings;
-};
-
-export const saveSettings = async (settings: AppSettings): Promise<boolean> => {
-  if (isSupabaseConfigured() && hasPendingConflicts()) {
-    console.error('Sync conflicts detected. Resolve conflicts before saving settings.');
-    return false;
-  }
-
-  if (!isSupabaseConfigured()) {
-    localStorage.setItem('qs_settings', JSON.stringify(settings));
-    return true;
-  }
-
-  if (!isOnline()) {
-    writeCache(CACHE_KEYS.settings, settings);
-    enqueueOp({
-      id: generateId(),
-      entity: 'settings',
-      action: 'upsert',
-      payload: {
-        id: 'google_sheet_url',
-        key: 'google_sheet_url',
-        value: settings.googleSheetUrl
-      },
-      createdAt: Date.now()
-    });
-    return true;
-  }
-
-  const { error } = await supabase
-    .from('app_settings')
-    .upsert({
-      id: 'google_sheet_url',
-      key: 'google_sheet_url',
-      value: settings.googleSheetUrl
-    } as never);
-
-  if (error) {
-    console.error('Error saving settings:', error);
-    return false;
-  }
-
-  writeCache(CACHE_KEYS.settings, settings);
-  return true;
-};
+// Settings functions removed - Google Sheets sync replaced with pull-based Apps Script approach
 
 // ============ STOCK CALCULATIONS ============
 
@@ -2047,40 +1988,4 @@ export const calculateAvailableStock = (transactions: Transaction[], itemId: str
   return totalStock - wipQuantity;
 };
 
-// ============ SYNC TO GOOGLE SHEETS ============
-
-export const syncToGoogleSheets = async (
-  tx: Transaction,
-  item: InventoryItem | undefined,
-  sheetUrl: string
-): Promise<boolean> => {
-  if (!sheetUrl) return false;
-
-  try {
-    const payload = {
-      date: new Date(tx.timestamp).toLocaleString(),
-      item: item?.name || 'Deleted',
-      folder: item?.category || 'General',
-      type: tx.type,
-      qty: tx.quantity,
-      unit: item?.unit || '',
-      user: tx.user,
-      reason: tx.reason,
-      location: tx.location || '',
-      amount: tx.amount || '',
-      billNumber: tx.billNumber || ''
-    };
-
-    await fetch(sheetUrl, {
-      method: 'POST',
-      mode: 'no-cors',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-
-    return true;
-  } catch (err) {
-    console.error('Sync error:', err);
-    return false;
-  }
-};
+// Google Sheets push-sync removed — replaced with pull-based Google Apps Script approach

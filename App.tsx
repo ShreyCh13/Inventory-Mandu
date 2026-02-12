@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { InventoryItem, Transaction, TransactionType, AppSettings, AuthSession, Category, User, Contractor } from './types';
+import { InventoryItem, Transaction, TransactionType, AuthSession, Category, User, Contractor } from './types';
 import { supabase, isSupabaseConfigured, subscribeToTableThrottled, RealtimePayload, ConnectionQuality, subscribeToConnectionState, startConnectionMonitoring, getConnectionState } from './lib/supabase';
 import * as db from './lib/db';
 import { InsufficientStockError, PendingOperation, setStorageWarningCallback, checkStorageHealth } from './lib/db';
@@ -11,6 +11,7 @@ import HistoryLog from './components/HistoryLog';
 import LoginPage from './components/LoginPage';
 import AdminPanel from './components/AdminPanel';
 import SyncConflictDialog from './components/SyncConflictDialog';
+import SyncSettings from './components/SyncSettings';
 import { Plus, Minus, Package, History, LayoutDashboard, Settings, User as UserIcon, LogOut, HardHat } from './components/Icons';
 import ContractorManager from './components/ContractorManager';
 
@@ -50,7 +51,6 @@ const App: React.FC = () => {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [contractors, setContractors] = useState<Contractor[]>([]);
-  const [settings, setSettings] = useState<AppSettings>({ googleSheetUrl: '' });
   const [users, setUsers] = useState<User[]>([]);
   const [stockLevels, setStockLevels] = useState<Record<string, { stock: number; wip: number }>>({});
   
@@ -64,8 +64,8 @@ const App: React.FC = () => {
   
   const [activeTab, setActiveTab] = useState<'dashboard' | 'items' | 'history' | 'contractors' | 'admin'>('dashboard');
   const [showTransactionModal, setShowTransactionModal] = useState<{type: TransactionType, item?: InventoryItem} | null>(null);
-  const [isSyncing, setIsSyncing] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [showSyncSettings, setShowSyncSettings] = useState(false);
   const [stockError, setStockError] = useState<{ message: string; available: number } | null>(null);
   
   // Conflict resolution dialog state
@@ -87,12 +87,11 @@ const App: React.FC = () => {
       if (isSupabaseConfigured() && isOnline) {
         await db.processPendingOps();
       }
-      const [loadedItems, loadedTransactions, loadedCategories, loadedContractors, loadedSettings, loadedUsers, loadedStockLevels] = await Promise.all([
+      const [loadedItems, loadedTransactions, loadedCategories, loadedContractors, loadedUsers, loadedStockLevels] = await Promise.all([
         db.getItems(),
         db.getTransactions({ limit: 1000 }), // Load recent 1000 for display (paginated in components)
         db.getCategories(),
         db.getContractors(),
-        db.getSettings(),
         db.getUsers(),
         db.getStockLevels() // Get accurate stock from stock_summary table
       ]);
@@ -101,7 +100,6 @@ const App: React.FC = () => {
       setTransactions(loadedTransactions);
       setCategories(loadedCategories.length > 0 ? loadedCategories.map(c => c.name) : DEFAULT_CATEGORIES);
       setContractors(loadedContractors);
-      setSettings(loadedSettings);
       setUsers(loadedUsers);
       setStockLevels(loadedStockLevels);
       setLastSync(new Date());
@@ -398,15 +396,6 @@ const App: React.FC = () => {
     }
   };
 
-  const syncToSheets = useCallback(async (tx: Transaction) => {
-    if (!settings.googleSheetUrl) return;
-    
-    setIsSyncing(true);
-    const item = items.find(i => i.id === tx.itemId);
-    await db.syncToGoogleSheets(tx, item, settings.googleSheetUrl);
-    setIsSyncing(false);
-  }, [settings.googleSheetUrl, items]);
-
   const addTransaction = async (
     t: Omit<Transaction, 'id' | 'timestamp'>, 
     newItem?: Omit<InventoryItem, 'id'>
@@ -469,10 +458,6 @@ const App: React.FC = () => {
               const updatedStockLevels = await db.getStockLevels();
               setStockLevels(updatedStockLevels);
               setShowTransactionModal(null);
-              
-              if (settings.googleSheetUrl) {
-                syncToSheets(wipReductionTx);
-              }
               refreshPendingSummary();
               return;
             }
@@ -492,15 +477,6 @@ const App: React.FC = () => {
         const updatedStockLevels = await db.getStockLevels();
         setStockLevels(updatedStockLevels);
         setShowTransactionModal(null);
-
-        // Sync to Google Sheets
-        if (settings.googleSheetUrl) {
-          syncToSheets(newTransaction);
-          // Also sync WIP reduction if it was created
-          if (wipReductionTx) {
-            syncToSheets(wipReductionTx);
-          }
-        }
         refreshPendingSummary();
       }
     } catch (error) {
@@ -846,14 +822,12 @@ const App: React.FC = () => {
                 !isOnline ? 'bg-red-500' :
                 connectionQuality === 'poor' ? 'bg-red-400' :
                 connectionQuality === 'slow' ? 'bg-amber-500' :
-                isSyncing ? 'bg-indigo-500 animate-pulse' : 
                 'bg-emerald-500'
               }`}></div>
               <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.2em] flex items-center gap-2 flex-wrap">
                 {!isOnline ? 'Offline Mode' :
                  connectionQuality === 'poor' ? 'Poor Connection' :
                  connectionQuality === 'slow' ? 'Slow Connection' :
-                 isSyncing ? 'Syncing...' : 
                  isSupabaseConfigured() ? 'Real-Time Sync Active' : 'Local Mode'}
                 {isOnline && connectionLatency > 0 && connectionQuality !== 'excellent' && (
                   <span className={`${connectionQuality === 'poor' ? 'text-red-400' : connectionQuality === 'slow' ? 'text-amber-500' : 'text-slate-300'}`}>
@@ -899,6 +873,12 @@ const App: React.FC = () => {
                   <Plus size={24} />
                   Receive Stock
                 </button>
+                {session.user.role === 'admin' && (
+                  <button onClick={() => setShowSyncSettings(true)} className="hidden sm:flex items-center justify-center gap-2 bg-emerald-600 text-white px-6 py-5 rounded-3xl font-black shadow-xl shadow-emerald-100 hover:bg-emerald-700 active:scale-95 transition-all text-base">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
+                    Live Sheet
+                  </button>
+                )}
               </>
             )}
           </div>
@@ -968,6 +948,7 @@ const App: React.FC = () => {
           transactions={transactions}
           categories={categories}
           contractors={contractors}
+          users={users}
           session={session}
           stockLevels={stockLevels}
           stockError={stockError}
@@ -989,6 +970,14 @@ const App: React.FC = () => {
         onDismissAll={handleDismissAllConflicts}
         onClose={() => setShowConflictDialog(false)}
       />
+
+      {/* Sync Settings Modal */}
+      {showSyncSettings && session && (
+        <SyncSettings
+          onClose={() => setShowSyncSettings(false)}
+          session={session}
+        />
+      )}
 
     </div>
   );

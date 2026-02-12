@@ -104,6 +104,7 @@ export interface Database {
           amount: number | null;
           bill_number: string | null;
           contractor_id: string | null;
+          approved_by: string | null;
           created_by: string;
           created_at: string;
           updated_at: string;
@@ -120,6 +121,7 @@ export interface Database {
           amount?: number | null;
           bill_number?: string | null;
           contractor_id?: string | null;
+          approved_by?: string | null;
           created_by: string;
           created_at?: string;
           updated_at?: string;
@@ -136,6 +138,7 @@ export interface Database {
           amount?: number | null;
           bill_number?: string | null;
           contractor_id?: string | null;
+          approved_by?: string | null;
           created_by?: string;
           created_at?: string;
           updated_at?: string;
@@ -234,6 +237,7 @@ export interface Transaction {
   amount?: number;
   billNumber?: string;
   contractorId?: string;
+  approvedBy?: string;
   createdBy: string;
   updatedAt?: number;
 }
@@ -244,7 +248,7 @@ export interface AuthSession {
 }
 
 export interface AppSettings {
-  googleSheetUrl: string;
+  // Reserved for future settings
 }
 
 // Type converters - DB row to frontend model
@@ -299,6 +303,7 @@ export const dbToTransaction = (row: Database['public']['Tables']['transactions'
   amount: row.amount || undefined,
   billNumber: row.bill_number || undefined,
   contractorId: row.contractor_id || undefined,
+  approvedBy: row.approved_by || undefined,
   createdBy: row.created_by,
   updatedAt: row.updated_at ? new Date(row.updated_at).getTime() : undefined
 });

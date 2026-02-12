@@ -5,8 +5,7 @@ export type {
   Contractor,
   InventoryItem, 
   Transaction, 
-  AuthSession, 
-  AppSettings 
+  AuthSession
 } from './lib/database.types';
 
 export type TransactionType = 'IN' | 'OUT' | 'WIP';
