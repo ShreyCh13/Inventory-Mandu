@@ -540,10 +540,8 @@ export const getUsers = async (): Promise<User[]> => {
 
   const allRows: Array<Parameters<typeof dbToUser>[0]> = [];
   let from = 0;
-  let pages = 0;
 
   while (true) {
-    pages++;
     const { data, error } = await supabase
       .from('users')
       .select('*')
@@ -564,12 +562,6 @@ export const getUsers = async (): Promise<User[]> => {
 
   const users = allRows.map(dbToUser);
   writeCache(CACHE_KEYS.users, users);
-  // #region agent log
-  {
-    const ids = new Set(users.map(u => u.id));
-    fetch('http://127.0.0.1:7383/ingest/c8e57ec8-30b6-473f-ac68-bc51c125d368',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c7fb8b'},body:JSON.stringify({sessionId:'c7fb8b',location:'lib/db.ts:getUsers',message:'getUsers pagination complete',data:{pages,rowCount:users.length,uniqueIds:ids.size,duplicateIds:users.length-ids.size},timestamp:Date.now(),hypothesisId:'H1_H2_H4',runId:'pagination-verify'})}).catch(()=>{});
-  }
-  // #endregion
   return users;
 };
 
@@ -752,10 +744,8 @@ export const getCategories = async (): Promise<Category[]> => {
 
   const allRows: Array<Parameters<typeof dbToCategory>[0]> = [];
   let from = 0;
-  let pages = 0;
 
   while (true) {
-    pages++;
     const { data, error } = await supabase
       .from('categories')
       .select('*')
@@ -776,12 +766,6 @@ export const getCategories = async (): Promise<Category[]> => {
 
   const categories = allRows.map(dbToCategory);
   writeCache(CACHE_KEYS.categories, categories);
-  // #region agent log
-  {
-    const ids = new Set(categories.map(c => c.id));
-    fetch('http://127.0.0.1:7383/ingest/c8e57ec8-30b6-473f-ac68-bc51c125d368',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c7fb8b'},body:JSON.stringify({sessionId:'c7fb8b',location:'lib/db.ts:getCategories',message:'getCategories pagination complete',data:{pages,rowCount:categories.length,uniqueIds:ids.size},timestamp:Date.now(),hypothesisId:'H1_H4',runId:'pagination-verify'})}).catch(()=>{});
-  }
-  // #endregion
   return categories;
 };
 
@@ -937,10 +921,8 @@ export const getContractors = async (): Promise<Contractor[]> => {
 
   const allRows: Array<Parameters<typeof dbToContractor>[0]> = [];
   let from = 0;
-  let pages = 0;
 
   while (true) {
-    pages++;
     const { data, error } = await supabase
       .from('contractors')
       .select('*')
@@ -961,12 +943,6 @@ export const getContractors = async (): Promise<Contractor[]> => {
 
   const contractors = allRows.map(dbToContractor);
   writeCache(CACHE_KEYS.contractors, contractors);
-  // #region agent log
-  {
-    const ids = new Set(contractors.map(c => c.id));
-    fetch('http://127.0.0.1:7383/ingest/c8e57ec8-30b6-473f-ac68-bc51c125d368',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c7fb8b'},body:JSON.stringify({sessionId:'c7fb8b',location:'lib/db.ts:getContractors',message:'getContractors pagination complete',data:{pages,rowCount:contractors.length,uniqueIds:ids.size,duplicateIds:contractors.length-ids.size},timestamp:Date.now(),hypothesisId:'H1_H2_H3_H4',runId:'pagination-verify'})}).catch(()=>{});
-  }
-  // #endregion
   return contractors;
 };
 
@@ -1122,10 +1098,8 @@ export const getItems = async (): Promise<InventoryItem[]> => {
   try {
     const rows: Record<string, unknown>[] = [];
     let from = 0;
-    let pages = 0;
 
     while (true) {
-      pages++;
       const { data } = await withRetry(
         async () => {
           const result = await supabase
@@ -1154,12 +1128,6 @@ export const getItems = async (): Promise<InventoryItem[]> => {
       dbToItem(row as never, ((row.categories as Record<string, unknown>)?.name as string) || 'General')
     );
     writeCache(CACHE_KEYS.items, items);
-    // #region agent log
-    {
-      const ids = new Set(items.map(i => i.id));
-      fetch('http://127.0.0.1:7383/ingest/c8e57ec8-30b6-473f-ac68-bc51c125d368',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c7fb8b'},body:JSON.stringify({sessionId:'c7fb8b',location:'lib/db.ts:getItems',message:'getItems pagination complete',data:{pages,rowCount:items.length,uniqueIds:ids.size,duplicateIds:items.length-ids.size},timestamp:Date.now(),hypothesisId:'H1_H2_H3_H4',runId:'pagination-verify'})}).catch(()=>{});
-    }
-    // #endregion
     return items;
   } catch (error) {
     console.error('Error fetching items:', error);
@@ -2014,11 +1982,8 @@ export const getStockLevels = async (): Promise<Record<string, { stock: number; 
     const levels: Record<string, { stock: number; wip: number }> = {};
     const pageSize = SUPABASE_PAGE_SIZE;
     let from = 0;
-    let pages = 0;
-    let totalRowsSeen = 0;
 
     while (true) {
-      pages++;
       const { data: stockData } = await withRetry(
         async () => {
           const result = await supabase
@@ -2033,7 +1998,6 @@ export const getStockLevels = async (): Promise<Record<string, { stock: number; 
       );
 
       const rows = stockData || [];
-      totalRowsSeen += rows.length;
       rows.forEach((row: { item_id: string; current_quantity: unknown; wip_quantity: unknown }) => {
         const stock = Number(row.current_quantity);
         const wip = Number(row.wip_quantity);
@@ -2048,12 +2012,6 @@ export const getStockLevels = async (): Promise<Record<string, { stock: number; 
     }
 
     writeCache(CACHE_KEYS.stock, levels);
-    // #region agent log
-    {
-      const mapKeyCount = Object.keys(levels).length;
-      fetch('http://127.0.0.1:7383/ingest/c8e57ec8-30b6-473f-ac68-bc51c125d368',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c7fb8b'},body:JSON.stringify({sessionId:'c7fb8b',location:'lib/db.ts:getStockLevels',message:'getStockLevels pagination complete',data:{pages,pageSize,totalRowsSeen,mapKeyCount,rowsEqualKeys:totalRowsSeen===mapKeyCount},timestamp:Date.now(),hypothesisId:'H1_H5',runId:'pagination-verify'})}).catch(()=>{});
-    }
-    // #endregion
     return levels;
   } catch (error) {
     console.error('Error fetching stock levels:', error);

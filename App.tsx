@@ -33,12 +33,6 @@ const App: React.FC = () => {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        // Check if session is expired (30 days for better mobile persistence)
-        const SESSION_DURATION = 30 * 24 * 60 * 60 * 1000; // 30 days
-        if (Date.now() - parsed.loginAt > SESSION_DURATION) {
-          localStorage.removeItem('qs_session');
-          return null;
-        }
         return parsed;
       } catch (e) {
         // Invalid session data, clear it
@@ -73,9 +67,6 @@ const App: React.FC = () => {
   // Conflict resolution dialog state
   const [showConflictDialog, setShowConflictDialog] = useState(false);
   const [conflictedOps, setConflictedOps] = useState<PendingOperation[]>([]);
-  
-  // Session expiry warning state
-  const [showSessionWarning, setShowSessionWarning] = useState(false);
   
   // Storage warning state
   const [storageWarning, setStorageWarning] = useState<string | null>(null);
@@ -357,45 +348,6 @@ const App: React.FC = () => {
     setSession(null);
     localStorage.removeItem('qs_session');
     setShowUserMenu(false);
-  };
-
-  // Session expiry monitoring
-  useEffect(() => {
-    if (!session) {
-      setShowSessionWarning(false);
-      return;
-    }
-    
-    const SESSION_DURATION = 30 * 24 * 60 * 60 * 1000; // 30 days
-    const WARNING_THRESHOLD = 24 * 60 * 60 * 1000; // 24 hours before expiry
-    
-    const checkSession = () => {
-      const timeLeft = (session.loginAt + SESSION_DURATION) - Date.now();
-      
-      if (timeLeft <= 0) {
-        // Session expired
-        handleLogout();
-      } else if (timeLeft < WARNING_THRESHOLD) {
-        setShowSessionWarning(true);
-      }
-    };
-    
-    // Check immediately
-    checkSession();
-    
-    // Check every minute
-    const checkInterval = setInterval(checkSession, 60000);
-    
-    return () => clearInterval(checkInterval);
-  }, [session]);
-
-  const renewSession = () => {
-    if (session) {
-      const renewedSession = { ...session, loginAt: Date.now() };
-      setSession(renewedSession);
-      localStorage.setItem('qs_session', JSON.stringify(renewedSession));
-      setShowSessionWarning(false);
-    }
   };
 
   const addTransaction = async (
@@ -764,30 +716,6 @@ const App: React.FC = () => {
       )}
 
       <main className="max-w-5xl mx-auto p-4 sm:p-6 md:p-12">
-        {/* Session Expiry Warning Banner */}
-        {showSessionWarning && (
-          <div className="mb-6 p-4 bg-amber-50 border-2 border-amber-200 rounded-2xl flex items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-amber-100 rounded-xl flex items-center justify-center shrink-0">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-amber-600">
-                  <circle cx="12" cy="12" r="10"/>
-                  <polyline points="12 6 12 12 16 14"/>
-                </svg>
-              </div>
-              <div>
-                <p className="font-bold text-amber-800">Session Expiring Soon</p>
-                <p className="text-sm text-amber-600">Your session will expire within 24 hours. Click Renew to stay logged in.</p>
-              </div>
-            </div>
-            <button
-              onClick={renewSession}
-              className="px-4 py-2 bg-amber-500 text-white rounded-xl font-bold hover:bg-amber-600 transition-colors shrink-0"
-            >
-              Renew
-            </button>
-          </div>
-        )}
-
         {/* Storage Warning Banner */}
         {storageWarning && (
           <div className="mb-6 p-4 bg-red-50 border-2 border-red-200 rounded-2xl flex items-center justify-between gap-4">
