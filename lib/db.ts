@@ -299,6 +299,7 @@ const DEFAULT_LIMITS = {
   categories: 200,     // Max categories
   contractors: 500     // Max contractors
 } as const;
+const SUPABASE_PAGE_SIZE = 1000;
 
 // Storage warning callback - set from App.tsx to show UI warnings
 let storageWarningCallback: ((message: string) => void) | null = null;
@@ -537,19 +538,38 @@ export const getUsers = async (): Promise<User[]> => {
     return readCache<User[]>(CACHE_KEYS.users, []);
   }
 
-  const { data, error } = await supabase
-    .from('users')
-    .select('*')
-    .order('created_at', { ascending: true })
-    .limit(DEFAULT_LIMITS.users);
+  const allRows: Array<Parameters<typeof dbToUser>[0]> = [];
+  let from = 0;
+  let pages = 0;
 
-  if (error) {
-    console.error('Error fetching users:', error);
-    return readCache<User[]>(CACHE_KEYS.users, []);
+  while (true) {
+    pages++;
+    const { data, error } = await supabase
+      .from('users')
+      .select('*')
+      .order('created_at', { ascending: true })
+      .order('id', { ascending: true })
+      .range(from, from + SUPABASE_PAGE_SIZE - 1);
+
+    if (error) {
+      console.error('Error fetching users:', error);
+      return readCache<User[]>(CACHE_KEYS.users, []);
+    }
+
+    const rows = data || [];
+    allRows.push(...rows);
+    if (rows.length < SUPABASE_PAGE_SIZE) break;
+    from += SUPABASE_PAGE_SIZE;
   }
 
-  const users = (data || []).map(dbToUser);
+  const users = allRows.map(dbToUser);
   writeCache(CACHE_KEYS.users, users);
+  // #region agent log
+  {
+    const ids = new Set(users.map(u => u.id));
+    fetch('http://127.0.0.1:7383/ingest/c8e57ec8-30b6-473f-ac68-bc51c125d368',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c7fb8b'},body:JSON.stringify({sessionId:'c7fb8b',location:'lib/db.ts:getUsers',message:'getUsers pagination complete',data:{pages,rowCount:users.length,uniqueIds:ids.size,duplicateIds:users.length-ids.size},timestamp:Date.now(),hypothesisId:'H1_H2_H4',runId:'pagination-verify'})}).catch(()=>{});
+  }
+  // #endregion
   return users;
 };
 
@@ -730,19 +750,38 @@ export const getCategories = async (): Promise<Category[]> => {
     return readCache<Category[]>(CACHE_KEYS.categories, []);
   }
 
-  const { data, error } = await supabase
-    .from('categories')
-    .select('*')
-    .order('sort_order', { ascending: true })
-    .limit(DEFAULT_LIMITS.categories);
+  const allRows: Array<Parameters<typeof dbToCategory>[0]> = [];
+  let from = 0;
+  let pages = 0;
 
-  if (error) {
-    console.error('Error fetching categories:', error);
-    return readCache<Category[]>(CACHE_KEYS.categories, []);
+  while (true) {
+    pages++;
+    const { data, error } = await supabase
+      .from('categories')
+      .select('*')
+      .order('sort_order', { ascending: true })
+      .order('id', { ascending: true })
+      .range(from, from + SUPABASE_PAGE_SIZE - 1);
+
+    if (error) {
+      console.error('Error fetching categories:', error);
+      return readCache<Category[]>(CACHE_KEYS.categories, []);
+    }
+
+    const rows = data || [];
+    allRows.push(...rows);
+    if (rows.length < SUPABASE_PAGE_SIZE) break;
+    from += SUPABASE_PAGE_SIZE;
   }
 
-  const categories = (data || []).map(dbToCategory);
+  const categories = allRows.map(dbToCategory);
   writeCache(CACHE_KEYS.categories, categories);
+  // #region agent log
+  {
+    const ids = new Set(categories.map(c => c.id));
+    fetch('http://127.0.0.1:7383/ingest/c8e57ec8-30b6-473f-ac68-bc51c125d368',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c7fb8b'},body:JSON.stringify({sessionId:'c7fb8b',location:'lib/db.ts:getCategories',message:'getCategories pagination complete',data:{pages,rowCount:categories.length,uniqueIds:ids.size},timestamp:Date.now(),hypothesisId:'H1_H4',runId:'pagination-verify'})}).catch(()=>{});
+  }
+  // #endregion
   return categories;
 };
 
@@ -896,19 +935,38 @@ export const getContractors = async (): Promise<Contractor[]> => {
     return readCache<Contractor[]>(CACHE_KEYS.contractors, []);
   }
 
-  const { data, error } = await supabase
-    .from('contractors')
-    .select('*')
-    .order('name', { ascending: true })
-    .limit(DEFAULT_LIMITS.contractors);
+  const allRows: Array<Parameters<typeof dbToContractor>[0]> = [];
+  let from = 0;
+  let pages = 0;
 
-  if (error) {
-    console.error('Error fetching contractors:', error);
-    return readCache<Contractor[]>(CACHE_KEYS.contractors, []);
+  while (true) {
+    pages++;
+    const { data, error } = await supabase
+      .from('contractors')
+      .select('*')
+      .order('name', { ascending: true })
+      .order('id', { ascending: true })
+      .range(from, from + SUPABASE_PAGE_SIZE - 1);
+
+    if (error) {
+      console.error('Error fetching contractors:', error);
+      return readCache<Contractor[]>(CACHE_KEYS.contractors, []);
+    }
+
+    const rows = data || [];
+    allRows.push(...rows);
+    if (rows.length < SUPABASE_PAGE_SIZE) break;
+    from += SUPABASE_PAGE_SIZE;
   }
 
-  const contractors = (data || []).map(dbToContractor);
+  const contractors = allRows.map(dbToContractor);
   writeCache(CACHE_KEYS.contractors, contractors);
+  // #region agent log
+  {
+    const ids = new Set(contractors.map(c => c.id));
+    fetch('http://127.0.0.1:7383/ingest/c8e57ec8-30b6-473f-ac68-bc51c125d368',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c7fb8b'},body:JSON.stringify({sessionId:'c7fb8b',location:'lib/db.ts:getContractors',message:'getContractors pagination complete',data:{pages,rowCount:contractors.length,uniqueIds:ids.size,duplicateIds:contractors.length-ids.size},timestamp:Date.now(),hypothesisId:'H1_H2_H3_H4',runId:'pagination-verify'})}).catch(()=>{});
+  }
+  // #endregion
   return contractors;
 };
 
@@ -1062,27 +1120,46 @@ export const getItems = async (): Promise<InventoryItem[]> => {
   }
 
   try {
-    const { data, error } = await withRetry(
-      async () => {
-        const result = await supabase
-          .from('items')
-          .select(`
-            *,
-            categories!inner (name)
-          `)
-          .is('deleted_at', null)  // Filter out soft-deleted items
-          .order('name', { ascending: true })
-          .limit(DEFAULT_LIMITS.items);
-        if (result.error) throw result.error;
-        return result;
-      },
-      'getItems'
-    );
+    const rows: Record<string, unknown>[] = [];
+    let from = 0;
+    let pages = 0;
 
-    const items = (data || []).map((row: Record<string, unknown>) => 
+    while (true) {
+      pages++;
+      const { data } = await withRetry(
+        async () => {
+          const result = await supabase
+            .from('items')
+            .select(`
+              *,
+              categories!inner (name)
+            `)
+            .is('deleted_at', null)  // Filter out soft-deleted items
+            .order('name', { ascending: true })
+            .order('id', { ascending: true })
+            .range(from, from + SUPABASE_PAGE_SIZE - 1);
+          if (result.error) throw result.error;
+          return result;
+        },
+        `getItems(${from})`
+      );
+
+      const page = (data || []) as Record<string, unknown>[];
+      rows.push(...page);
+      if (page.length < SUPABASE_PAGE_SIZE) break;
+      from += SUPABASE_PAGE_SIZE;
+    }
+
+    const items = rows.map((row: Record<string, unknown>) => 
       dbToItem(row as never, ((row.categories as Record<string, unknown>)?.name as string) || 'General')
     );
     writeCache(CACHE_KEYS.items, items);
+    // #region agent log
+    {
+      const ids = new Set(items.map(i => i.id));
+      fetch('http://127.0.0.1:7383/ingest/c8e57ec8-30b6-473f-ac68-bc51c125d368',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c7fb8b'},body:JSON.stringify({sessionId:'c7fb8b',location:'lib/db.ts:getItems',message:'getItems pagination complete',data:{pages,rowCount:items.length,uniqueIds:ids.size,duplicateIds:items.length-ids.size},timestamp:Date.now(),hypothesisId:'H1_H2_H3_H4',runId:'pagination-verify'})}).catch(()=>{});
+    }
+    // #endregion
     return items;
   } catch (error) {
     console.error('Error fetching items:', error);
@@ -1932,28 +2009,51 @@ export const getStockLevels = async (): Promise<Record<string, { stock: number; 
   }
 
   try {
-    // Use stock_summary table for O(1) stock lookups (maintained by triggers)
-    const { data: stockData } = await withRetry(
-      async () => {
-        const result = await supabase
-          .from('stock_summary')
-          .select('item_id, current_quantity, wip_quantity');
-        if (result.error) throw result.error;
-        return result;
-      },
-      'getStockLevels'
-    );
-
+    // Data API returns a max number of rows per request (~1000). One unbounded select
+    // drops the rest — those items then show stock 0 in the UI. Page until exhausted.
     const levels: Record<string, { stock: number; wip: number }> = {};
-    
-    (stockData || []).forEach((row: { item_id: string; current_quantity: number; wip_quantity: number }) => {
-      levels[row.item_id] = {
-        stock: row.current_quantity || 0,
-        wip: row.wip_quantity || 0
-      };
-    });
+    const pageSize = SUPABASE_PAGE_SIZE;
+    let from = 0;
+    let pages = 0;
+    let totalRowsSeen = 0;
+
+    while (true) {
+      pages++;
+      const { data: stockData } = await withRetry(
+        async () => {
+          const result = await supabase
+            .from('stock_summary')
+            .select('item_id, current_quantity, wip_quantity')
+            .order('item_id', { ascending: true })
+            .range(from, from + pageSize - 1);
+          if (result.error) throw result.error;
+          return result;
+        },
+        `getStockLevels(${from})`
+      );
+
+      const rows = stockData || [];
+      totalRowsSeen += rows.length;
+      rows.forEach((row: { item_id: string; current_quantity: unknown; wip_quantity: unknown }) => {
+        const stock = Number(row.current_quantity);
+        const wip = Number(row.wip_quantity);
+        levels[row.item_id] = {
+          stock: Number.isFinite(stock) ? stock : 0,
+          wip: Number.isFinite(wip) ? wip : 0,
+        };
+      });
+
+      if (rows.length < pageSize) break;
+      from += pageSize;
+    }
 
     writeCache(CACHE_KEYS.stock, levels);
+    // #region agent log
+    {
+      const mapKeyCount = Object.keys(levels).length;
+      fetch('http://127.0.0.1:7383/ingest/c8e57ec8-30b6-473f-ac68-bc51c125d368',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c7fb8b'},body:JSON.stringify({sessionId:'c7fb8b',location:'lib/db.ts:getStockLevels',message:'getStockLevels pagination complete',data:{pages,pageSize,totalRowsSeen,mapKeyCount,rowsEqualKeys:totalRowsSeen===mapKeyCount},timestamp:Date.now(),hypothesisId:'H1_H5',runId:'pagination-verify'})}).catch(()=>{});
+    }
+    // #endregion
     return levels;
   } catch (error) {
     console.error('Error fetching stock levels:', error);

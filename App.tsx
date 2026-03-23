@@ -91,7 +91,7 @@ const App: React.FC = () => {
       }
       const [loadedItems, loadedTransactions, loadedCategories, loadedContractors, loadedUsers, loadedStockLevels] = await Promise.all([
         db.getItems(),
-        db.getTransactions({ limit: 1000 }), // Load recent 1000 for display (paginated in components)
+        db.getTransactions({ limit: 1000 }), // Intentional recent-window for UI responsiveness (not full-history source)
         db.getCategories(),
         db.getContractors(),
         db.getUsers(),
@@ -207,7 +207,7 @@ const App: React.FC = () => {
             // Add new transactions at the beginning, avoid duplicates
             const existingIds = new Set(prev.map(t => t.id));
             const uniqueNew = newTxs.filter(t => !existingIds.has(t.id));
-            // Sort by timestamp descending and keep recent 1000 (pagination handles display)
+            // Keep recent-window list bounded for UI responsiveness (full history is fetched on dedicated screens)
             return [...uniqueNew, ...prev]
               .sort((a, b) => b.timestamp - a.timestamp)
               .slice(0, 1000);
