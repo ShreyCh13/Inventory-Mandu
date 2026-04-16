@@ -375,6 +375,31 @@ const fetchUpdatedAt = async (entity: PendingEntity, id: string): Promise<string
   return (data as { updated_at?: string } | null)?.updated_at || null;
 };
 
+// Clear known references before deleting a user to avoid FK failures
+const clearUserReferences = async (userId: string): Promise<void> => {
+  const updates = [
+    { table: 'items', column: 'created_by' },
+    { table: 'transactions', column: 'created_by' },
+    { table: 'transactions', column: 'approved_by' }
+  ] as const;
+
+  for (const target of updates) {
+    const { error } = await supabase
+      .from(target.table)
+      .update({ [target.column]: null } as never)
+      .eq(target.column, userId);
+
+    if (error) {
+      const message = `${error.message ?? ''} ${error.details ?? ''}`.toLowerCase();
+      // Older DBs may not yet have approved_by; ignore that specific case
+      if (message.includes('column') && message.includes('does not exist')) {
+        continue;
+      }
+      throw error;
+    }
+  }
+};
+
 // Process a single operation - returns true if successful
 const processOperation = async (op: PendingOperation): Promise<boolean> => {
   const tableMap: Record<PendingEntity, string> = {
@@ -402,7 +427,20 @@ const processOperation = async (op: PendingOperation): Promise<boolean> => {
     const { error } = await supabase.from(table).update(op.payload as never).eq('id', op.payload.id as string);
     if (error) throw error;
   } else if (op.action === 'delete') {
-    const { error } = await supabase.from(table).delete().eq('id', op.payload.id as string);
+    const id = op.payload.id as string;
+    let { error } = await supabase.from(table).delete().eq('id', id);
+
+    // Some deployments may have restrictive FK behavior; clear references and retry once
+    if (error && op.entity === 'users') {
+      const errorText = `${error.code ?? ''} ${error.message ?? ''} ${error.details ?? ''}`.toLowerCase();
+      const isFkViolation = errorText.includes('foreign key') || errorText.includes('23503');
+      if (isFkViolation) {
+        await clearUserReferences(id);
+        const retry = await supabase.from(table).delete().eq('id', id);
+        error = retry.error;
+      }
+    }
+
     if (error) throw error;
   }
 
@@ -704,10 +742,28 @@ export const deleteUser = async (id: string): Promise<boolean> => {
     return true;
   }
 
-  const { error } = await supabase
+  let { error } = await supabase
     .from('users')
     .delete()
     .eq('id', id);
+
+  if (error) {
+    const errorText = `${error.code ?? ''} ${error.message ?? ''} ${error.details ?? ''}`.toLowerCase();
+    const isFkViolation = errorText.includes('foreign key') || errorText.includes('23503');
+
+    if (isFkViolation) {
+      try {
+        await clearUserReferences(id);
+        const retry = await supabase
+          .from('users')
+          .delete()
+          .eq('id', id);
+        error = retry.error;
+      } catch (clearError) {
+        console.error('Error clearing user references before delete:', clearError);
+      }
+    }
+  }
 
   if (error) {
     console.error('Error deleting user:', error);
