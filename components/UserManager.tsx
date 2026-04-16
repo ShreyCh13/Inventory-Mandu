@@ -132,11 +132,6 @@ const UserManager: React.FC<UserManagerProps> = ({ currentUserId }) => {
       return;
     }
 
-    if (db.hasPendingConflicts()) {
-      setError('Cannot delete users while sync conflicts are pending. Resolve conflicts first, then try again.');
-      return;
-    }
-
     const confirmed = await confirm({
       title: 'Delete User',
       message: 'Are you sure you want to delete this user? This action cannot be undone.',
@@ -145,12 +140,10 @@ const UserManager: React.FC<UserManagerProps> = ({ currentUserId }) => {
     });
     
     if (confirmed) {
-      const success = await db.deleteUser(userId);
-      if (success) {
-        await loadUsers();
-      } else {
-        await loadUsers();
-        setError('Failed to delete user. Check connection/sync status and try again.');
+      const result = await db.deleteUser(userId);
+      await loadUsers();
+      if (!result.success) {
+        setError(result.error || 'Failed to delete user. Check browser console for details.');
       }
     }
   };

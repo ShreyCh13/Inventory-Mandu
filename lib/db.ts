@@ -377,27 +377,18 @@ const fetchUpdatedAt = async (entity: PendingEntity, id: string): Promise<string
 
 // Clear known references before deleting a user to avoid FK failures
 const clearUserReferences = async (userId: string): Promise<void> => {
-  const updates = [
-    { table: 'items', column: 'created_by' },
-    { table: 'transactions', column: 'created_by' },
-    { table: 'transactions', column: 'approved_by' }
-  ] as const;
-
-  for (const target of updates) {
-    const { error } = await supabase
-      .from(target.table)
-      .update({ [target.column]: null } as never)
-      .eq(target.column, userId);
-
-    if (error) {
-      const message = `${error.message ?? ''} ${error.details ?? ''}`.toLowerCase();
-      // Older DBs may not yet have approved_by; ignore that specific case
-      if (message.includes('column') && message.includes('does not exist')) {
-        continue;
-      }
-      throw error;
-    }
-  }
+  // Silently clear all possible references - ignore all errors
+  try {
+    await supabase.from('items').update({ created_by: null } as never).eq('created_by', userId);
+  } catch { /* ignore */ }
+  
+  try {
+    await supabase.from('transactions').update({ created_by: null } as never).eq('created_by', userId);
+  } catch { /* ignore */ }
+  
+  try {
+    await supabase.from('transactions').update({ approved_by: null } as never).eq('approved_by', userId);
+  } catch { /* ignore */ }
 };
 
 // Process a single operation - returns true if successful
@@ -715,18 +706,15 @@ export const updateUser = async (id: string, updates: Partial<User>): Promise<bo
   return true;
 };
 
-export const deleteUser = async (id: string): Promise<boolean> => {
-  if (isSupabaseConfigured() && hasPendingConflicts()) {
-    console.error('Sync conflicts detected. Resolve conflicts before deleting users.');
-    return false;
-  }
-
+export const deleteUser = async (id: string): Promise<{ success: boolean; error?: string }> => {
+  // Local mode
   if (!isSupabaseConfigured()) {
     const users = await getUsers();
     localStorage.setItem('qs_users', JSON.stringify(users.filter(u => u.id !== id)));
-    return true;
+    return { success: true };
   }
 
+  // Offline mode - queue for later
   if (!isOnline()) {
     const cachedUsers = readCache<User[]>(CACHE_KEYS.users, []);
     const current = cachedUsers.find(u => u.id === id);
@@ -739,40 +727,37 @@ export const deleteUser = async (id: string): Promise<boolean> => {
       createdAt: Date.now(),
       expectedUpdatedAt: current?.updatedAt
     });
-    return true;
+    return { success: true };
   }
 
-  let { error } = await supabase
-    .from('users')
-    .delete()
-    .eq('id', id);
+  // Online Supabase mode - clear references first, then delete
+  await clearUserReferences(id);
 
-  if (error) {
-    const errorText = `${error.code ?? ''} ${error.message ?? ''} ${error.details ?? ''}`.toLowerCase();
-    const isFkViolation = errorText.includes('foreign key') || errorText.includes('23503');
+  // Try delete up to 3 times
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const { error } = await supabase
+      .from('users')
+      .delete()
+      .eq('id', id);
 
-    if (isFkViolation) {
-      try {
-        await clearUserReferences(id);
-        const retry = await supabase
-          .from('users')
-          .delete()
-          .eq('id', id);
-        error = retry.error;
-      } catch (clearError) {
-        console.error('Error clearing user references before delete:', clearError);
-      }
+    if (!error) {
+      const cachedUsers = readCache<User[]>(CACHE_KEYS.users, []);
+      writeCache(CACHE_KEYS.users, cachedUsers.filter(u => u.id !== id));
+      return { success: true };
     }
+
+    // If still FK error, clear refs again and retry
+    const errText = `${error.code} ${error.message}`.toLowerCase();
+    if (errText.includes('foreign') || errText.includes('23503')) {
+      await clearUserReferences(id);
+      continue;
+    }
+
+    // Other error - fail
+    return { success: false, error: `${error.code}: ${error.message}` };
   }
 
-  if (error) {
-    console.error('Error deleting user:', error);
-    return false;
-  }
-
-  const cachedUsers = readCache<User[]>(CACHE_KEYS.users, []);
-  writeCache(CACHE_KEYS.users, cachedUsers.filter(u => u.id !== id));
-  return true;
+  return { success: false, error: 'Delete failed after retries' };
 };
 
 export const authenticateUser = async (username: string, password: string): Promise<User | null> => {
