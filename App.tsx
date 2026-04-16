@@ -304,13 +304,18 @@ const App: React.FC = () => {
     };
   }, [forceLogout, session?.user.id]);
 
-  // Session validity: if current user is removed, force logout
+  // Session validity: if current user is removed or modified (e.g. password changed), force logout
   useEffect(() => {
     if (!session) return;
     if (users.length === 0) return;
 
-    const stillExists = users.some(u => u.id === session.user.id);
-    if (!stillExists) {
+    const currentUser = users.find(u => u.id === session.user.id);
+    if (!currentUser) {
+      forceLogout();
+      return;
+    }
+
+    if (currentUser.updatedAt && currentUser.updatedAt > session.loginAt) {
       forceLogout();
     }
   }, [forceLogout, session, users]);

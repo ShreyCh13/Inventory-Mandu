@@ -684,7 +684,9 @@ export const updateUser = async (id: string, updates: Partial<User>): Promise<bo
     return true;
   }
 
-  const dbUpdates: Record<string, unknown> = {};
+  const dbUpdates: Record<string, unknown> = {
+    updated_at: new Date().toISOString()
+  };
   if (updates.username) dbUpdates.username = updates.username;
   if (updates.password) dbUpdates.password = updates.password;
   if (updates.displayName) dbUpdates.display_name = updates.displayName;
