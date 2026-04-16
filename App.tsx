@@ -43,6 +43,11 @@ const App: React.FC = () => {
     return null;
   });
 
+  const forceLogout = useCallback(() => {
+    setSession(null);
+    localStorage.removeItem('qs_session');
+  }, []);
+
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
@@ -260,18 +265,75 @@ const App: React.FC = () => {
       setLastSync(new Date());
     }, 3000); // 3 second throttle
 
+    // Subscribe to users changes - enforce session revocation on delete
+    const usersChannel = subscribeToTableThrottled<Record<string, unknown>>('users', async (payloads) => {
+      if (import.meta.env.DEV) console.log('Users batch update:', payloads.length, 'changes');
+
+      const currentUserId = session?.user.id;
+      if (currentUserId) {
+        const deletedIds = new Set<string>();
+        payloads.forEach(p => {
+          if (p.eventType === 'DELETE' && p.old) {
+            const oldData = p.old as { id?: string };
+            if (oldData.id) deletedIds.add(oldData.id);
+          }
+        });
+        if (deletedIds.has(currentUserId)) {
+          forceLogout();
+          return;
+        }
+      }
+
+      // Keep local users list in sync for admin UI + auth checks
+      const freshUsers = await db.getUsers();
+      setUsers(freshUsers);
+      setLastSync(new Date());
+    }, 2000); // 2 second throttle
+
     // Store cleanup functions
     subscriptionsRef.current = [
       () => supabase.removeChannel(itemsChannel),
       () => supabase.removeChannel(transactionsChannel),
       () => supabase.removeChannel(categoriesChannel),
-      () => supabase.removeChannel(contractorsChannel)
+      () => supabase.removeChannel(contractorsChannel),
+      () => supabase.removeChannel(usersChannel)
     ];
 
     return () => {
       subscriptionsRef.current.forEach(cleanup => cleanup());
     };
-  }, []);
+  }, [forceLogout, session?.user.id]);
+
+  // Session validity: if current user is removed, force logout
+  useEffect(() => {
+    if (!session) return;
+    if (users.length === 0) return;
+
+    const stillExists = users.some(u => u.id === session.user.id);
+    if (!stillExists) {
+      forceLogout();
+    }
+  }, [forceLogout, session, users]);
+
+  // Cross-tab enforcement in local-storage mode
+  useEffect(() => {
+    if (isSupabaseConfigured()) return;
+    if (!session) return;
+
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== 'qs_users') return;
+      try {
+        const nextUsers: User[] = e.newValue ? JSON.parse(e.newValue) : [];
+        const stillExists = nextUsers.some(u => u.id === session.user.id);
+        if (!stillExists) forceLogout();
+      } catch {
+        // ignore malformed data
+      }
+    };
+
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, [forceLogout, session]);
 
   // Connection status and quality monitoring
   useEffect(() => {
@@ -345,9 +407,7 @@ const App: React.FC = () => {
   };
 
   const handleLogout = () => {
-    setSession(null);
-    localStorage.removeItem('qs_session');
-    setShowUserMenu(false);
+    forceLogout();
   };
 
   const addTransaction = async (
