@@ -304,7 +304,8 @@ const App: React.FC = () => {
     };
   }, [forceLogout, session?.user.id]);
 
-  // Session validity: if current user is removed or modified (e.g. password changed), force logout
+  // Session validity: if current user is removed or password changed, force logout
+  const lastKnownPassword = useRef<string | null>(null);
   useEffect(() => {
     if (!session) return;
     if (users.length === 0) return;
@@ -315,7 +316,10 @@ const App: React.FC = () => {
       return;
     }
 
-    if (currentUser.updatedAt && currentUser.updatedAt > session.loginAt) {
+    // On first load, store the password. On subsequent updates, compare.
+    if (lastKnownPassword.current === null) {
+      lastKnownPassword.current = currentUser.password;
+    } else if (currentUser.password !== lastKnownPassword.current) {
       forceLogout();
     }
   }, [forceLogout, session, users]);
