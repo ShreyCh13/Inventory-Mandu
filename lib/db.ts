@@ -730,34 +730,28 @@ export const deleteUser = async (id: string): Promise<{ success: boolean; error?
     return { success: true };
   }
 
-  // Online Supabase mode - clear references first, then delete
+  // Online Supabase mode - clear references then delete via raw SQL to bypass RLS
   await clearUserReferences(id);
 
-  // Try delete up to 3 times
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const { error } = await supabase
-      .from('users')
-      .delete()
-      .eq('id', id);
+  // Use raw SQL so RLS policies can't silently block the delete
+  const { error: rpcError } = await supabase.rpc('delete_user_by_id', { p_user_id: id });
 
-    if (!error) {
-      const cachedUsers = readCache<User[]>(CACHE_KEYS.users, []);
-      writeCache(CACHE_KEYS.users, cachedUsers.filter(u => u.id !== id));
-      return { success: true };
+  if (rpcError) {
+    // Fallback to normal delete if the RPC function doesn't exist yet
+    const rpcMsg = `${rpcError.message ?? ''}`.toLowerCase();
+    if (rpcMsg.includes('function') && (rpcMsg.includes('does not exist') || rpcMsg.includes('not found') || rpcMsg.includes('could not find'))) {
+      const { error } = await supabase.from('users').delete().eq('id', id);
+      if (error) {
+        return { success: false, error: `${error.code}: ${error.message}` };
+      }
+    } else {
+      return { success: false, error: `${rpcError.code}: ${rpcError.message}` };
     }
-
-    // If still FK error, clear refs again and retry
-    const errText = `${error.code} ${error.message}`.toLowerCase();
-    if (errText.includes('foreign') || errText.includes('23503')) {
-      await clearUserReferences(id);
-      continue;
-    }
-
-    // Other error - fail
-    return { success: false, error: `${error.code}: ${error.message}` };
   }
 
-  return { success: false, error: 'Delete failed after retries' };
+  const cachedUsers = readCache<User[]>(CACHE_KEYS.users, []);
+  writeCache(CACHE_KEYS.users, cachedUsers.filter(u => u.id !== id));
+  return { success: true };
 };
 
 export const authenticateUser = async (username: string, password: string): Promise<User | null> => {

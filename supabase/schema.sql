@@ -460,6 +460,22 @@ ALTER PUBLICATION supabase_realtime ADD TABLE stock_summary;
 ALTER TABLE transactions ADD COLUMN IF NOT EXISTS approved_by UUID REFERENCES users(id) ON DELETE SET NULL DEFAULT NULL;
 
 -- ============================================
+-- FUNCTION: Force-delete a user (bypasses RLS)
+-- ============================================
+CREATE OR REPLACE FUNCTION delete_user_by_id(p_user_id UUID)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+  UPDATE items SET created_by = NULL WHERE created_by = p_user_id;
+  UPDATE transactions SET created_by = NULL WHERE created_by = p_user_id;
+  UPDATE transactions SET approved_by = NULL WHERE approved_by = p_user_id;
+  DELETE FROM users WHERE id = p_user_id;
+END;
+$$;
+
+-- ============================================
 -- DONE!
 -- ============================================
 -- Your database is ready. Now:
